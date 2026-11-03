@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass
+from typing import Any
+
+from .types import Block, Message, ModelResponse, Role, StopReason, ToolCall, ToolResult, ToolSchema
+from .provider import Provider
+from .tools.registry import ToolRegistry
+from .permissions import PermissionGate
+
+
+MAX_STEPS = 50
+
+
+@dataclass
+class AgentState:
+    messages: list[Message]
+    step_count: int = 0
+    last_tool_calls: list[tuple[str, dict[str, Any]]] = None
+
+    def __post_init__(self):
+        if self.last_tool_calls is None:
+            self.last_tool_calls = []
+
+
+class AgentLoop:
+    def __init__(
+        self,
+        provider: Provider,
+        registry: ToolRegistry,
+        permission_gate: PermissionGate,
+        system_prompt: str,
+        max_steps: int = MAX_STEPS,
+    ):
+        self.provider = provider
+        self.registry = registry
+        self.permission_gate = permission_gate
+        self.system_prompt = system_prompt
+        self.max_steps = max_steps
+        self.state = AgentState(messages=[])
+
+    def add_user_message(self, text: str) -> None:
+        self.state.messages.append(Message.user(text))
+
+    async def run(self) -> str:
+        """Run the agent loop until completion or max steps."""
+        self.state.step_count = 0
+        self.state.last_tool_calls = []
+
+        while self.state.step_count < self.max_steps:
+            self.state.step_count += 1
+
+            # Get model response
+            response = await self.provider.complete(
+                system=self.system_prompt,
+                messages=self.state.messages,
+                tools=self.registry.schemas(),
+            )
+
+            # Add assistant message to history
+            self.state.messages.append(Message.assistant(response.blocks))
+
+            # Check for tool calls
+            tool_calls = [b for b in response.blocks if isinstance(b, ToolCall)]
+
+            if not tool_calls:
+                # No tool calls - return text content
+                text_blocks = [b for b in response.blocks if hasattr(b, 'text') and b.text]
+                return "".join(b.text for b in text_blocks)
+
+            # Check for repeated identical tool calls
+            current_calls = [(tc.name, tc.arguments) for tc in tool_calls]
+            if current_calls == self.state.last_tool_calls:
+                return "Error: Repeated identical tool calls detected. Stopping to prevent loop."
+            self.state.last_tool_calls = current_calls
+
+            # Execute tool calls
+            for tool_call in tool_calls:
+                result = await self._execute_tool(tool_call)
+                self.state.messages.append(Message.tool_result(
+                    call_id=tool_call.id,
+                    output=result.output,
+                    is_error=result.is_error,
+                ))
+
+        return f"Error: Maximum steps ({self.max_steps}) reached."
+
+    async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
+        # Check permission
+        allowed, reason = self.permission_gate.check(tool_call.name, tool_call.arguments)
+        if not allowed:
+            return ToolResult(
+                call_id=tool_call.id,
+                output=f"Permission denied: {reason}",
+                is_error=True,
+            )
+
+        # Execute tool
+        try:
+            output = await self.registry.execute(tool_call.name, **tool_call.arguments)
+            return ToolResult(call_id=tool_call.id, output=output, is_error=False)
+        except Exception as e:
+            return ToolResult(
+                call_id=tool_call.id,
+                output=f"Tool error: {type(e).__name__}: {e}",
+                is_error=True,
+            )
+
+    def clear_history(self) -> None:
+        self.state.messages.clear()
+        self.state.step_count = 0
+        self.state.last_tool_calls = []
