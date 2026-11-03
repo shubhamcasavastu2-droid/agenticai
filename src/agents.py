@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import yaml
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from dataclasses import dataclass, field
+
+import yaml
 
 
 @dataclass
@@ -18,9 +19,9 @@ class Agent:
     content: str = ""
 
     @classmethod
-    def load(cls, agent_file: Path) -> "Agent":
+    def load(cls, agent_file: Path) -> Agent:
         content = agent_file.read_text()
-        
+
         # Parse YAML frontmatter
         if content.startswith("---"):
             parts = content.split("---", 2)
@@ -33,7 +34,7 @@ class Agent:
         else:
             frontmatter = {}
             body = content
-        
+
         return cls(
             name=frontmatter.get("name", agent_file.stem),
             description=frontmatter.get("description", ""),
@@ -70,15 +71,15 @@ class AgentLoader:
     def discover(self) -> dict[str, Agent]:
         """Discover all agents in the agents directory."""
         self._agents.clear()
-        
+
         # Load default agents.md if exists
         if self.default_agents_md and self.default_agents_md.exists():
             self._load_agents_md(self.default_agents_md)
-        
+
         # Load individual agent files (.md with frontmatter)
         if not self.agents_dir.exists():
             return self._agents
-        
+
         for agent_file in self.agents_dir.iterdir():
             if agent_file.suffix == ".md":
                 try:
@@ -123,7 +124,7 @@ class AgentLoader:
         """Format agents for inclusion in system prompt."""
         if not self._agents:
             return ""
-        
+
         lines = ["## Available Agents"]
         for agent in self._agents.values():
             lines.append(f"- **{agent.name}**: {agent.description or 'No description'}")

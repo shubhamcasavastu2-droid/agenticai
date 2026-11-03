@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
+from ..permissions import validate_path
 from ..types import Tool, ToolSchema
-from ..permissions import validate_path, truncate_output
-
 
 EDIT_FILE_SCHEMA = ToolSchema(
     name="edit_file",
@@ -42,7 +40,7 @@ class EditFileTool(Tool):
         validated_path = validate_path(self.project_root, path)
 
         try:
-            with open(validated_path, "r", encoding="utf-8") as f:
+            with open(validated_path, encoding="utf-8") as f:
                 content = f.read()
         except FileNotFoundError:
             raise EditFileError(f"File not found: {path}")

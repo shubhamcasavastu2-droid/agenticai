@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Awaitable
+from typing import Any
 
-from .types import Block, Message, ModelResponse, Role, StopReason, ToolCall, ToolResult, ToolSchema, ReasoningBlock
+from .permissions import PermissionGate
 from .provider import Provider
 from .tools.registry import ToolRegistry
-from .permissions import PermissionGate
-
+from .types import (
+    Message,
+    ReasoningBlock,
+    ToolCall,
+    ToolResult,
+)
 
 MAX_STEPS = 50
 
@@ -102,7 +106,7 @@ class AgentLoop:
             allowed, reason = await self.permission_callback(tool_call.name, tool_call.arguments)
         else:
             allowed, reason = self.permission_gate.check(tool_call.name, tool_call.arguments)
-        
+
         if not allowed:
             return ToolResult(
                 call_id=tool_call.id,

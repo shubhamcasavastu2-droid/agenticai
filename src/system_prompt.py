@@ -4,7 +4,6 @@ import platform
 from datetime import datetime
 from pathlib import Path
 
-
 SYSTEM_PROMPT_TEMPLATE = """You are an agentic coding assistant in a terminal. You read, search, edit and run code in the user's project using the tools below.
 
 # Environment
@@ -75,7 +74,7 @@ def build_system_prompt(
     # Load AGENT.md if it exists
     if agent_md_path and agent_md_path.exists():
         try:
-            with open(agent_md_path, "r") as f:
+            with open(agent_md_path) as f:
                 agent_md = f.read().strip()
             if agent_md:
                 prompt += f"\n\n# Project Instructions (from AGENT.md)\n{agent_md}"

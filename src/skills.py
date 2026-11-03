@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import yaml
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from dataclasses import dataclass, field
+
+import yaml
 
 
 @dataclass
@@ -15,11 +16,11 @@ class Skill:
     content: str = ""
 
     @classmethod
-    def load(cls, skill_dir: Path) -> "Skill":
+    def load(cls, skill_dir: Path) -> Skill:
         skill_file = skill_dir / "SKILL.md"
         if not skill_file.exists():
             raise ValueError(f"SKILL.md not found in {skill_dir}")
-        
+
         content = skill_file.read_text()
         parts = content.split("---", 2)
         if len(parts) >= 3:
@@ -28,7 +29,7 @@ class Skill:
         else:
             frontmatter = {}
             body = content
-        
+
         return cls(
             name=frontmatter.get("name", skill_dir.name),
             description=frontmatter.get("description", ""),
@@ -48,7 +49,7 @@ class SkillLoader:
         self._skills.clear()
         if not self.skills_dir.exists():
             return self._skills
-        
+
         for skill_dir in self.skills_dir.iterdir():
             if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
                 try:
@@ -68,7 +69,7 @@ class SkillLoader:
         """Format skills for inclusion in system prompt."""
         if not self._skills:
             return ""
-        
+
         lines = ["## Available Skills"]
         for skill in self._skills.values():
             lines.append(f"- **{skill.name}**: {skill.description}")

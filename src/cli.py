@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import sys
-from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -13,6 +11,7 @@ from rich.prompt import Prompt
 from .agent import AgentLoop
 from .agents import AgentLoader
 from .config import Config
+from .permissions import PermissionGate, check_deny_list
 from .provider import OpenAICompatibleProvider
 from .skills import SkillLoader
 from .system_prompt import build_system_prompt, get_tool_descriptions
@@ -25,8 +24,6 @@ from .tools import (
     create_read_file_tool,
     create_write_file_tool,
 )
-from .permissions import PermissionGate, check_deny_list
-
 
 console = Console()
 
@@ -49,12 +46,13 @@ class CLI:
         )
 
         # Register tools
-        self.registry.register(create_read_file_tool(self.config.project_root))
+        max_output = self.config.max_output_size
+        self.registry.register(create_read_file_tool(self.config.project_root, max_output))
         self.registry.register(create_write_file_tool(self.config.project_root))
         self.registry.register(create_edit_file_tool(self.config.project_root))
-        self.registry.register(create_glob_tool(self.config.project_root))
-        self.registry.register(create_grep_tool(self.config.project_root))
-        self.registry.register(create_bash_tool(self.config.project_root))
+        self.registry.register(create_glob_tool(self.config.project_root, max_output))
+        self.registry.register(create_grep_tool(self.config.project_root, max_output))
+        self.registry.register(create_bash_tool(self.config.project_root, max_output))
 
         # Load skills
         skills_dir = self.config.project_root / ".agents" / "skills"
@@ -89,7 +87,7 @@ class CLI:
             reasoning_callback=self._reasoning_callback,
         )
 
-        console.print(f"[green]Agent initialized[/green]")
+        console.print("[green]Agent initialized[/green]")
         console.print(f"Model: [cyan]{self.config.model}[/cyan]")
         console.print(f"Project: [cyan]{self.config.project_root}[/cyan]")
         if self.skill_loader._skills:
@@ -129,8 +127,8 @@ class CLI:
 
     async def _reasoning_callback(self, reasoning: str) -> None:
         """Display model reasoning in console."""
-        from rich.panel import Panel
         from rich.markdown import Markdown
+        from rich.panel import Panel
         console.print(Panel(Markdown(reasoning), title="🤔 Reasoning", border_style="magenta", style="dim"))
 
     async def _permission_callback(self, tool_name: str, args: dict[str, Any]) -> tuple[bool, str | None]:
@@ -148,9 +146,9 @@ class CLI:
                 return False, f"Command matches deny list: {command}"
 
         # Show tool call info
-        from rich.table import Table
         from rich.prompt import Prompt
-        
+        from rich.table import Table
+
         table = Table(title=f"Tool Call: {tool_name}", border_style="yellow")
         table.add_column("Parameter", style="cyan")
         table.add_column("Value", style="white")
@@ -160,10 +158,10 @@ class CLI:
 
         # Show permission options
         console.print("\n[y] Allow once  [a] Allow always  [u] Auto-allow  [n] Deny  [d] Deny always")
-        
+
         while True:
             choice = Prompt.ask("Permission", choices=["y", "a", "u", "n", "d"], default="n")
-            
+
             if choice == "y":
                 return True, None
             elif choice == "a":
@@ -229,9 +227,9 @@ class CLI:
         if not args:
             self.show_skills()
             return
-        
+
         subcommand = args[0].lower()
-        
+
         if subcommand == "list":
             self.show_skills()
         elif subcommand == "show":
@@ -260,9 +258,9 @@ class CLI:
         if not args:
             self.show_agents()
             return
-        
+
         subcommand = args[0].lower()
-        
+
         if subcommand == "list":
             self.show_agents()
         elif subcommand == "show":
@@ -289,47 +287,47 @@ class CLI:
     def show_skills(self):
         """Display all loaded skills."""
         from rich.table import Table
-        
+
         skills = self.skill_loader.all()
         if not skills:
             console.print("[yellow]No skills loaded[/yellow]")
             return
-        
+
         table = Table(title="Loaded Skills", border_style="blue")
         table.add_column("Name", style="cyan")
         table.add_column("Description", style="white")
         table.add_column("Version", style="yellow")
-        
+
         for skill in skills:
             version = skill.metadata.get("version", "1.0")
             table.add_row(skill.name, skill.description, version)
-        
+
         console.print(table)
 
     def show_skill_detail(self, skill):
         """Display detailed skill information."""
-        from rich.panel import Panel
         from rich.markdown import Markdown
-        
+        from rich.panel import Panel
+
         content = f"**Name**: {skill.name}\n"
         content += f"**Description**: {skill.description}\n"
         if skill.metadata:
             content += f"**Metadata**: {skill.metadata}\n"
         if skill.content:
             content += f"\n---\n{skill.content}"
-        
+
         console.print(Panel(Markdown(content), title=f"Skill: {skill.name}", border_style="cyan"))
 
     def create_skill(self, name: str, description: str):
         """Create a new skill file."""
         skills_dir = self.config.project_root / ".agents" / "skills" / name
         skills_dir.mkdir(parents=True, exist_ok=True)
-        
+
         skill_file = skills_dir / "SKILL.md"
         if skill_file.exists():
             console.print(f"[red]Skill already exists: {name}[/red]")
             return
-        
+
         content = f"""---
 name: {name}
 description: {description}
@@ -348,14 +346,14 @@ metadata:
 
 ## Workflow
 
-1. 
-2. 
-3. 
+1.
+2.
+3.
 """
         skill_file.write_text(content)
         console.print(f"[green]Created skill: {name}[/green]")
         console.print(f"Path: {skill_file}")
-        
+
         # Reload skills
         self.skill_loader.discover()
 
@@ -377,14 +375,14 @@ metadata:
         """Handle /permission command to view and set tool permissions."""
         tools = self.registry.all()
         tool_names = [t.name for t in tools]
-        
+
         if not args:
             # Show current permissions
             self.show_permissions(tool_names)
             return
-        
+
         subcommand = args[0].lower()
-        
+
         if subcommand == "list":
             self.show_permissions(tool_names)
         elif subcommand == "allow":
@@ -430,27 +428,27 @@ metadata:
     def show_permissions(self, tool_names: list[str]):
         """Display current permission status for all tools."""
         from rich.table import Table
-        
+
         table = Table(title="Tool Permissions", border_style="blue")
         table.add_column("Tool", style="cyan")
         table.add_column("Default", style="yellow")
         table.add_column("Current", style="green")
         table.add_column("Description", style="white")
-        
+
         for tool in self.registry.all():
             name = tool.name
             # Default is prompt for all tools (they all ask now)
             default = "prompt"
-            
+
             if name in self.permission_gate._always_allow:
                 current = "always"
             elif name in self.permission_gate._auto_allow:
                 current = "auto"
             else:
                 current = "prompt"
-            
+
             table.add_row(name, default, current, tool.description)
-        
+
         console.print(table)
         console.print("\n[y] Allow once  [a] Always allow  [u] Auto-allow  [n] Deny  [d] Deny always")
 
@@ -533,46 +531,30 @@ metadata:
         """
         console.print(Panel(Markdown(help_text), title="Help", border_style="blue"))
 
-    def show_permission_help(self):
-        help_text = """
-**Permission Commands:**
-- `/permission` - Show current permissions
-- `/permission list` - Show current permissions
-- `/permission allow <tool> [always]` - Allow tool (once or always)
-- `/permission deny <tool>` - Deny tool (will prompt each time)
-- `/permission reset` - Reset all permissions to defaults
-
-**Examples:**
-- `/permission allow bash always` - Always allow bash without prompting
-- `/permission deny write_file` - Require prompt for write_file
-- `/permission reset` - Reset to defaults
-        """
-        console.print(Panel(Markdown(help_text), title="Permission Help", border_style="blue"))
-
     def show_agents(self):
         """Display all loaded agents."""
         from rich.table import Table
-        
+
         agents = self.agent_loader.all()
         if not agents:
             console.print("[yellow]No agents loaded[/yellow]")
             return
-        
+
         table = Table(title="Loaded Agents", border_style="blue")
         table.add_column("Name", style="cyan")
         table.add_column("Description", style="white")
         table.add_column("Model", style="yellow")
-        
+
         for agent in agents:
             table.add_row(agent.name, agent.description or "No description", agent.model)
-        
+
         console.print(table)
 
     def show_agent_detail(self, agent):
         """Display detailed agent information."""
-        from rich.panel import Panel
         from rich.markdown import Markdown
-        
+        from rich.panel import Panel
+
         content = f"**Name**: {agent.name}\n"
         content += f"**Description**: {agent.description}\n"
         content += f"**Model**: {agent.model}\n"
@@ -582,19 +564,19 @@ metadata:
             content += f"**Permissions**: {agent.permissions}\n"
         if agent.system_prompt:
             content += f"\n**System Prompt**:\n{agent.system_prompt[:300]}..."
-        
+
         console.print(Panel(Markdown(content), title=f"Agent: {agent.name}", border_style="cyan"))
 
     def create_agent(self, name: str, description: str):
         """Create a new agent file."""
         agents_dir = self.config.project_root / ".agents" / "agents"
         agents_dir.mkdir(parents=True, exist_ok=True)
-        
+
         agent_file = agents_dir / f"{name}.md"
         if agent_file.exists():
             console.print(f"[red]Agent already exists: {name}[/red]")
             return
-        
+
         content = f"""---
 name: {name}
 description: {description}
@@ -631,7 +613,7 @@ This agent is configured with the standard toolset. Modify the frontmatter to cu
         agent_file.write_text(content)
         console.print(f"[green]Created agent: {name}[/green]")
         console.print(f"Path: {agent_file}")
-        
+
         # Reload agents
         self.agent_loader.discover()
 

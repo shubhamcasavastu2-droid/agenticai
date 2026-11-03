@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import glob as glob_module
 from pathlib import Path
-from typing import Any
 
+from ..permissions import make_truncate_output
 from ..types import Tool, ToolSchema
-from ..permissions import validate_path, truncate_output
-
 
 GLOB_SCHEMA = ToolSchema(
     name="glob",
@@ -23,8 +21,9 @@ GLOB_SCHEMA = ToolSchema(
 
 
 class GlobTool(Tool):
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, max_output_size: int = 2000):
         self.project_root = project_root.resolve()
+        self._truncate = make_truncate_output(max_output_size)
         super().__init__(
             name="glob",
             description=GLOB_SCHEMA.description,
@@ -52,8 +51,8 @@ class GlobTool(Tool):
             return f"No files match pattern: {pattern}"
 
         output = "\n".join(relative_matches)
-        return truncate_output(output)
+        return self._truncate(output)
 
 
-def create_glob_tool(project_root: Path) -> GlobTool:
-    return GlobTool(project_root)
+def create_glob_tool(project_root: Path, max_output_size: int = 2000) -> GlobTool:
+    return GlobTool(project_root, max_output_size)

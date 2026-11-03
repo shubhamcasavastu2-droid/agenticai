@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import shlex
 from pathlib import Path
-from typing import Any
 
+from ..permissions import check_deny_list, make_truncate_output, validate_path
 from ..types import Tool, ToolSchema
-from ..permissions import validate_path, truncate_output, check_deny_list
-
 
 BASH_TOOL_SCHEMA = ToolSchema(
     name="bash",
@@ -26,8 +23,9 @@ BASH_TOOL_SCHEMA = ToolSchema(
 
 
 class BashTool(Tool):
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, max_output_size: int = 2000):
         self.project_root = project_root.resolve()
+        self._truncate = make_truncate_output(max_output_size)
         super().__init__(
             name="bash",
             description=BASH_TOOL_SCHEMA.description,
@@ -59,7 +57,7 @@ class BashTool(Tool):
                     process.communicate(),
                     timeout=timeout_seconds,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 process.kill()
                 await process.wait()
                 raise TimeoutError(f"Command timed out after {timeout_seconds}s")
@@ -81,8 +79,8 @@ class BashTool(Tool):
         if process.returncode != 0:
             output += f"\n[Exit code: {process.returncode}]"
 
-        return truncate_output(output)
+        return self._truncate(output)
 
 
-def create_bash_tool(project_root: Path) -> BashTool:
-    return BashTool(project_root)
+def create_bash_tool(project_root: Path, max_output_size: int = 2000) -> BashTool:
+    return BashTool(project_root, max_output_size)

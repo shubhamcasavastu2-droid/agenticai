@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
 
+from ..permissions import make_truncate_output, validate_path
 from ..types import Tool, ToolSchema
-from ..permissions import validate_path, truncate_output
-
 
 GREP_SCHEMA = ToolSchema(
     name="grep",
@@ -25,8 +23,9 @@ GREP_SCHEMA = ToolSchema(
 
 
 class GrepTool(Tool):
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, max_output_size: int = 2000):
         self.project_root = project_root.resolve()
+        self._truncate = make_truncate_output(max_output_size)
         super().__init__(
             name="grep",
             description=GREP_SCHEMA.description,
@@ -54,7 +53,7 @@ class GrepTool(Tool):
 
         for file_path in files:
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, encoding="utf-8") as f:
                     lines = f.readlines()
             except (UnicodeDecodeError, PermissionError):
                 continue
@@ -71,8 +70,8 @@ class GrepTool(Tool):
             return f"No matches for pattern: {pattern}"
 
         output = "\n".join(matches)
-        return truncate_output(output)
+        return self._truncate(output)
 
 
-def create_grep_tool(project_root: Path) -> GrepTool:
-    return GrepTool(project_root)
+def create_grep_tool(project_root: Path, max_output_size: int = 2000) -> GrepTool:
+    return GrepTool(project_root, max_output_size)

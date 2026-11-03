@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
+from ..permissions import validate_path
 from ..types import Tool, ToolSchema
-from ..permissions import validate_path, truncate_output
-
 
 WRITE_FILE_SCHEMA = ToolSchema(
     name="write_file",

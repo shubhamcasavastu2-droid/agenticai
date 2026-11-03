@@ -28,3 +28,12 @@
   - docs: CHANGELOG.md
   - chore: src/__pycache__/agent.cpython-310.pyc, src/__pycache__/agent.cpython-314.pyc, src/__pycache__/cli.cpython-310.pyc, src/__pycache__/cli.cpython-314.pyc, src/__pycache__/permissions.cpython-310.pyc ... (+5 more)
 
+## [dd7a35e5] - 2026-11-04
+- **Type**: feat
+- **Author**: jaibharat27
+- **Description**: Add skills and agents support with .md format (industrial standard): .agents/skills/<name>/SKILL.md, .agents/agents/<name>.md, agents/agents.md, /skills and /agents commands
+- **Files** (20):
+  - feat: src/agents.py, src/cli.py, src/skills.py, src/system_prompt.py
+  - docs: .agents/agents/code-reviewer.md, .agents/agents/example-agent.md, .agents/skills/example-skill/SKILL.md, .agents/skills/my-new-skill/SKILL.md, CHANGELOG.md ... (+1 more)
+  - chore: pyproject.toml, src/__pycache__/agents.cpython-310.pyc, src/__pycache__/agents.cpython-314.pyc, src/__pycache__/cli.cpython-310.pyc, src/__pycache__/cli.cpython-314.pyc ... (+5 more)
+

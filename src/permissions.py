@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shlex
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +74,13 @@ def truncate_output(output: str, max_size: int = MAX_OUTPUT_SIZE) -> str:
     return truncated + f"\n\n[OUTPUT TRUNCATED: {len(output)} chars, showing first {max_size}]"
 
 
+def make_truncate_output(max_size: int):
+    """Create a truncate_output function with a specific max size."""
+    def _truncate(output: str) -> str:
+        return truncate_output(output, max_size)
+    return _truncate
+
+
 class PermissionGate:
     def __init__(self):
         self._always_allow: set[str] = set()  # tool names always allowed
@@ -87,7 +93,7 @@ class PermissionGate:
         """
         if tool_name in self._always_allow:
             return True, None
-        
+
         if tool_name in self._auto_allow:
             return True, None
 
@@ -96,7 +102,7 @@ class PermissionGate:
             command = args.get("command", "")
             if check_deny_list(command):
                 return False, f"Command matches deny list: {command}"
-        
+
         return False, f"Tool '{tool_name}' requires permission"
 
     def allow_always(self, tool_name: str) -> None:

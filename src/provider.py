@@ -6,7 +6,17 @@ from typing import Any
 
 import httpx
 
-from .types import Block, Message, ModelResponse, ReasoningBlock, Role, StopReason, TextBlock, ToolCall, ToolResult, ToolSchema
+from .types import (
+    Block,
+    Message,
+    ModelResponse,
+    ReasoningBlock,
+    Role,
+    StopReason,
+    TextBlock,
+    ToolCall,
+    ToolSchema,
+)
 
 
 class Provider(ABC):

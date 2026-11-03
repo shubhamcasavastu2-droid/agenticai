@@ -1,17 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 
-class Role(str, Enum):
+class Role(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"
     TOOL = "tool"
 
 
-class StopReason(str, Enum):
+class StopReason(StrEnum):
     END_TURN = "end_turn"
     MAX_TOKENS = "max_tokens"
     TOOL_USE = "tool_use"

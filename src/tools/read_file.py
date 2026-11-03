@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any
 
+from ..permissions import make_truncate_output, validate_path
 from ..types import Tool, ToolSchema
-from ..permissions import validate_path, TruncationError, truncate_output
-
 
 READ_FILE_SCHEMA = ToolSchema(
     name="read_file",
@@ -25,8 +22,9 @@ READ_FILE_SCHEMA = ToolSchema(
 
 
 class ReadFileTool(Tool):
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, max_output_size: int = 2000):
         self.project_root = project_root.resolve()
+        self._truncate = make_truncate_output(max_output_size)
         super().__init__(
             name="read_file",
             description=READ_FILE_SCHEMA.description,
@@ -37,7 +35,7 @@ class ReadFileTool(Tool):
         validated_path = validate_path(self.project_root, path)
 
         try:
-            with open(validated_path, "r", encoding="utf-8") as f:
+            with open(validated_path, encoding="utf-8") as f:
                 lines = f.readlines()
         except FileNotFoundError:
             raise FileNotFoundError(f"File not found: {path}")
@@ -65,8 +63,8 @@ class ReadFileTool(Tool):
         if offset or limit:
             output = f"[Lines {start + 1}-{end} of {total_lines}]\n{output}"
 
-        return truncate_output(output)
+        return self._truncate(output)
 
 
-def create_read_file_tool(project_root: Path) -> ReadFileTool:
-    return ReadFileTool(project_root)
+def create_read_file_tool(project_root: Path, max_output_size: int = 2000) -> ReadFileTool:
+    return ReadFileTool(project_root, max_output_size)
