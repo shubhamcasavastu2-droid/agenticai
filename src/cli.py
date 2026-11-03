@@ -140,16 +140,104 @@ class CLI:
             self.running = False
             if self.provider:
                 await self.provider.close()
+        elif command == "/permission":
+            await self.handle_permission_command(parts[1:] if len(parts) > 1 else [])
         else:
             console.print(f"[red]Unknown command: {command}[/red]")
             self.show_help()
 
-    def show_help(self):
+    async def handle_permission_command(self, args: list[str]):
+        """Handle /permission command to view and set tool permissions."""
+        tools = self.registry.all()
+        tool_names = [t.name for t in tools]
+        
+        if not args:
+            # Show current permissions
+            self.show_permissions(tool_names)
+            return
+        
+        subcommand = args[0].lower()
+        
+        if subcommand == "list":
+            self.show_permissions(tool_names)
+        elif subcommand == "allow":
+            if len(args) < 2:
+                console.print("[red]Usage: /permission allow <tool-name> [always][/red]")
+                return
+            tool_name = args[1]
+            if tool_name not in tool_names:
+                console.print(f"[red]Unknown tool: {tool_name}. Available: {', '.join(tool_names)}[/red]")
+                return
+            always = len(args) > 2 and args[2].lower() == "always"
+            self.permission_gate.allow_always(tool_name) if always else None
+            # For one-time allow, we just note it - the gate checks _always_allow set
+            console.print(f"[green]Permission set: {tool_name} = {'always' if always else 'prompt'}[/green]")
+        elif subcommand == "deny":
+            if len(args) < 2:
+                console.print("[red]Usage: /permission deny <tool-name>[/red]")
+                return
+            tool_name = args[1]
+            if tool_name not in tool_names:
+                console.print(f"[red]Unknown tool: {tool_name}. Available: {', '.join(tool_names)}[/red]")
+                return
+            # Remove from always_allow if present
+            self.permission_gate._always_allow.discard(tool_name)
+            console.print(f"[yellow]Permission denied: {tool_name} will prompt each time[/yellow]")
+        elif subcommand == "reset":
+            self.permission_gate.reset()
+            console.print("[green]All permissions reset to defaults[/green]")
+        else:
+            console.print(f"[red]Unknown subcommand: {subcommand}[/red]")
+            self.show_permission_help()
+
+    def show_permissions(self, tool_names: list[str]):
+        """Display current permission status for all tools."""
+        from rich.table import Table
+        
+        table = Table(title="Tool Permissions", border_style="blue")
+        table.add_column("Tool", style="cyan")
+        table.add_column("Default", style="yellow")
+        table.add_column("Current", style="green")
+        table.add_column("Description", style="white")
+        
+        for tool in self.registry.all():
+            name = tool.name
+            is_write = name in {"write_file", "edit_file", "bash"}
+            default = "prompt" if is_write else "auto"
+            
+            if name in self.permission_gate._always_allow:
+                current = "always"
+            elif is_write:
+                current = "prompt"
+            else:
+                current = "auto"
+            
+            table.add_row(name, default, current, tool.description)
+        
+        console.print(table)
+        console.print("\n[yellow]y[/yellow]=allow once  [yellow]a[/yellow]=always allow  [yellow]n[/yellow]=deny  [yellow]r[/yellow]=reset")
+
+    def show_permission_help(self):
+        help_text = """
+**Permission Commands:**
+- `/permission` - Show current permissions
+- `/permission list` - Show current permissions
+- `/permission allow <tool> [always]` - Allow tool (once or always)
+- `/permission deny <tool>` - Deny tool (will prompt each time)
+- `/permission reset` - Reset all permissions to defaults
+
+**Examples:**
+- `/permission allow bash always` - Always allow bash without prompting
+- `/permission deny write_file` - Require prompt for write_file
+- `/permission reset` - Reset to defaults
+        """
+        console.print(Panel(Markdown(help_text), title="Permission Help", border_style="blue"))
         help_text = """
 **Slash Commands:**
 - `/help` - Show this help
 - `/clear` - Clear conversation history
 - `/model [name]` - Show or change model
+- `/permission [list|allow|deny|reset]` - View/set tool permissions
 - `/exit` - Exit the CLI
 
 **Tools available to the agent:**
@@ -164,8 +252,50 @@ class CLI:
 - Read-only tools (read_file, glob, grep) run automatically
 - Write tools (write_file, edit_file, bash) ask for permission
 - Type `y` to allow once, `a` to always allow for this session, `n` to deny
+- Use `/permission` to manage permissions without prompts
         """
         console.print(Panel(Markdown(help_text), title="Help", border_style="blue"))
+
+    def show_help(self):
+        help_text = """
+**Slash Commands:**
+- `/help` - Show this help
+- `/clear` - Clear conversation history
+- `/model [name]` - Show or change model
+- `/permission [list|allow|deny|reset]` - View/set tool permissions
+- `/exit` - Exit the CLI
+
+**Tools available to the agent:**
+- `read_file` - Read a file (with optional offset/limit)
+- `write_file` - Write content to a file
+- `edit_file` - Edit a file by exact string replacement
+- `glob` - Find files matching a pattern
+- `grep` - Search for regex pattern in files
+- `bash` - Execute shell commands
+
+**Permission model:**
+- Read-only tools (read_file, glob, grep) run automatically
+- Write tools (write_file, edit_file, bash) ask for permission
+- Type `y` to allow once, `a` to always allow for this session, `n` to deny
+- Use `/permission` to manage permissions without prompts
+        """
+        console.print(Panel(Markdown(help_text), title="Help", border_style="blue"))
+
+    def show_permission_help(self):
+        help_text = """
+**Permission Commands:**
+- `/permission` - Show current permissions
+- `/permission list` - Show current permissions
+- `/permission allow <tool> [always]` - Allow tool (once or always)
+- `/permission deny <tool>` - Deny tool (will prompt each time)
+- `/permission reset` - Reset all permissions to defaults
+
+**Examples:**
+- `/permission allow bash always` - Always allow bash without prompting
+- `/permission deny write_file` - Require prompt for write_file
+- `/permission reset` - Reset to defaults
+        """
+        console.print(Panel(Markdown(help_text), title="Permission Help", border_style="blue"))
 
 
 async def main():
