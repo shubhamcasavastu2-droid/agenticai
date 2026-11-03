@@ -19,3 +19,12 @@
   - docs: CHANGELOG.md
   - chore: src/__pycache__/cli.cpython-310.pyc, src/__pycache__/cli.cpython-314.pyc
 
+## [6e03fbd4] - 2026-11-03
+- **Type**: feat
+- **Author**: jaibharat27
+- **Description**: Add reasoning display in console and interactive permission prompts for ALL tools with options: allow once, always, auto, deny, deny always
+- **Files** (16):
+  - feat: src/agent.py, src/cli.py, src/permissions.py, src/provider.py, src/types.py
+  - docs: CHANGELOG.md
+  - chore: src/__pycache__/agent.cpython-310.pyc, src/__pycache__/agent.cpython-314.pyc, src/__pycache__/cli.cpython-310.pyc, src/__pycache__/cli.cpython-314.pyc, src/__pycache__/permissions.cpython-310.pyc ... (+5 more)
+

@@ -11,8 +11,10 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from .agent import AgentLoop
+from .agents import AgentLoader
 from .config import Config
 from .provider import OpenAICompatibleProvider
+from .skills import SkillLoader
 from .system_prompt import build_system_prompt, get_tool_descriptions
 from .tools import (
     ToolRegistry,
@@ -23,7 +25,7 @@ from .tools import (
     create_read_file_tool,
     create_write_file_tool,
 )
-from .permissions import PermissionGate
+from .permissions import PermissionGate, check_deny_list
 
 
 console = Console()
@@ -54,13 +56,26 @@ class CLI:
         self.registry.register(create_grep_tool(self.config.project_root))
         self.registry.register(create_bash_tool(self.config.project_root))
 
-        # Build system prompt
+        # Load skills
+        skills_dir = self.config.project_root / ".agents" / "skills"
+        self.skill_loader = SkillLoader(skills_dir)
+        self.skill_loader.discover()
+
+        # Load agents
+        agents_dir = self.config.project_root / ".agents" / "agents"
+        default_agents_md = self.config.project_root / "agents" / "agents.md"
+        self.agent_loader = AgentLoader(agents_dir, default_agents_md)
+        self.agent_loader.discover()
+
+        # Build system prompt with skills and agents
         tool_descriptions = get_tool_descriptions(self.registry.all())
         agent_md_path = self.config.project_root / "AGENT.md"
         system_prompt = build_system_prompt(
             self.config.project_root,
             tool_descriptions,
             agent_md_path,
+            self.skill_loader.format_for_prompt(),
+            self.agent_loader.format_for_prompt(),
         )
 
         # Create agent loop with permission callback
@@ -77,6 +92,10 @@ class CLI:
         console.print(f"[green]Agent initialized[/green]")
         console.print(f"Model: [cyan]{self.config.model}[/cyan]")
         console.print(f"Project: [cyan]{self.config.project_root}[/cyan]")
+        if self.skill_loader._skills:
+            console.print(f"Skills loaded: [cyan]{len(self.skill_loader._skills)}[/cyan]")
+        if self.agent_loader._agents:
+            console.print(f"Agents loaded: [cyan]{len(self.agent_loader._agents)}[/cyan]")
         console.print("Type [bold]/help[/bold] for commands\n")
 
     async def run(self):
@@ -104,8 +123,7 @@ class CLI:
         if self.agent_loop:
             self.agent_loop.add_user_message(user_input)
 
-            with console.status("[bold green]Thinking...[/bold green]"):
-                result = await self.agent_loop.run()
+            result = await self.agent_loop.run()
 
             console.print(Panel(Markdown(result), title="Assistant", border_style="green"))
 
@@ -198,9 +216,162 @@ class CLI:
                 await self.provider.close()
         elif command == "/permission":
             await self.handle_permission_command(parts[1:] if len(parts) > 1 else [])
+        elif command == "/skills":
+            await self.handle_skills_command(parts[1:] if len(parts) > 1 else [])
+        elif command == "/agents":
+            await self.handle_agents_command(parts[1:] if len(parts) > 1 else [])
         else:
             console.print(f"[red]Unknown command: {command}[/red]")
             self.show_help()
+
+    async def handle_skills_command(self, args: list[str]):
+        """Handle /skills command to list, show, or create skills."""
+        if not args:
+            self.show_skills()
+            return
+        
+        subcommand = args[0].lower()
+        
+        if subcommand == "list":
+            self.show_skills()
+        elif subcommand == "show":
+            if len(args) < 2:
+                console.print("[red]Usage: /skills show <skill-name>[/red]")
+                return
+            skill_name = args[1]
+            skill = self.skill_loader.get(skill_name)
+            if skill:
+                self.show_skill_detail(skill)
+            else:
+                console.print(f"[red]Skill not found: {skill_name}[/red]")
+        elif subcommand == "create":
+            if len(args) < 2:
+                console.print("[red]Usage: /skills create <skill-name> [description][/red]")
+                return
+            skill_name = args[1]
+            description = " ".join(args[2:]) if len(args) > 2 else f"Skill: {skill_name}"
+            self.create_skill(skill_name, description)
+        else:
+            console.print(f"[red]Unknown skills subcommand: {subcommand}[/red]")
+            self.show_skills_help()
+
+    async def handle_agents_command(self, args: list[str]):
+        """Handle /agents command to list, show, or create agents."""
+        if not args:
+            self.show_agents()
+            return
+        
+        subcommand = args[0].lower()
+        
+        if subcommand == "list":
+            self.show_agents()
+        elif subcommand == "show":
+            if len(args) < 2:
+                console.print("[red]Usage: /agents show <agent-name>[/red]")
+                return
+            agent_name = args[1]
+            agent = self.agent_loader.get(agent_name)
+            if agent:
+                self.show_agent_detail(agent)
+            else:
+                console.print(f"[red]Agent not found: {agent_name}[/red]")
+        elif subcommand == "create":
+            if len(args) < 2:
+                console.print("[red]Usage: /agents create <agent-name> [description][/red]")
+                return
+            agent_name = args[1]
+            description = " ".join(args[2:]) if len(args) > 2 else f"Agent: {agent_name}"
+            self.create_agent(agent_name, description)
+        else:
+            console.print(f"[red]Unknown agents subcommand: {subcommand}[/red]")
+            self.show_agents_help()
+
+    def show_skills(self):
+        """Display all loaded skills."""
+        from rich.table import Table
+        
+        skills = self.skill_loader.all()
+        if not skills:
+            console.print("[yellow]No skills loaded[/yellow]")
+            return
+        
+        table = Table(title="Loaded Skills", border_style="blue")
+        table.add_column("Name", style="cyan")
+        table.add_column("Description", style="white")
+        table.add_column("Version", style="yellow")
+        
+        for skill in skills:
+            version = skill.metadata.get("version", "1.0")
+            table.add_row(skill.name, skill.description, version)
+        
+        console.print(table)
+
+    def show_skill_detail(self, skill):
+        """Display detailed skill information."""
+        from rich.panel import Panel
+        from rich.markdown import Markdown
+        
+        content = f"**Name**: {skill.name}\n"
+        content += f"**Description**: {skill.description}\n"
+        if skill.metadata:
+            content += f"**Metadata**: {skill.metadata}\n"
+        if skill.content:
+            content += f"\n---\n{skill.content}"
+        
+        console.print(Panel(Markdown(content), title=f"Skill: {skill.name}", border_style="cyan"))
+
+    def create_skill(self, name: str, description: str):
+        """Create a new skill file."""
+        skills_dir = self.config.project_root / ".agents" / "skills" / name
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        
+        skill_file = skills_dir / "SKILL.md"
+        if skill_file.exists():
+            console.print(f"[red]Skill already exists: {name}[/red]")
+            return
+        
+        content = f"""---
+name: {name}
+description: {description}
+license: MIT
+compatibility: Python 3.11+
+metadata:
+  version: "1.0"
+  skill-author: User
+---
+
+# {name}
+
+## When to use
+
+{description}
+
+## Workflow
+
+1. 
+2. 
+3. 
+"""
+        skill_file.write_text(content)
+        console.print(f"[green]Created skill: {name}[/green]")
+        console.print(f"Path: {skill_file}")
+        
+        # Reload skills
+        self.skill_loader.discover()
+
+    def show_skills_help(self):
+        help_text = """
+**Skills Commands:**
+- `/skills` - List all skills
+- `/skills list` - List all skills
+- `/skills show <name>` - Show skill details
+- `/skills create <name> [description]` - Create new skill
+
+**Examples:**
+- `/skills create my-skill "A custom skill for my project"`
+- `/skills show my-skill`
+        """
+        console.print(Panel(Markdown(help_text), title="Skills Help", border_style="cyan"))
 
     async def handle_permission_command(self, args: list[str]):
         """Handle /permission command to view and set tool permissions."""
@@ -337,6 +508,8 @@ class CLI:
 - `/clear` - Clear conversation history
 - `/model [name]` - Show or change model
 - `/permission [list|allow|deny|reset]` - View/set tool permissions
+- `/skills [list|show|create]` - Manage skills
+- `/agents [list|show|create]` - Manage agents
 - `/exit` - Exit the CLI
 
 **Tools available to the agent:**
@@ -352,6 +525,11 @@ class CLI:
 - Write tools (write_file, edit_file, bash) ask for permission
 - Type `y` to allow once, `a` to always allow for this session, `n` to deny
 - Use `/permission` to manage permissions without prompts
+
+**Skills & Agents:**
+- Skills in `.agents/skills/<name>/SKILL.md` (auto-loaded)
+- Agents in `.agents/agents/<name>.md` (auto-loaded)
+- Default agents config in `agents/agents.md` (auto-loaded if exists)
         """
         console.print(Panel(Markdown(help_text), title="Help", border_style="blue"))
 
@@ -370,6 +548,106 @@ class CLI:
 - `/permission reset` - Reset to defaults
         """
         console.print(Panel(Markdown(help_text), title="Permission Help", border_style="blue"))
+
+    def show_agents(self):
+        """Display all loaded agents."""
+        from rich.table import Table
+        
+        agents = self.agent_loader.all()
+        if not agents:
+            console.print("[yellow]No agents loaded[/yellow]")
+            return
+        
+        table = Table(title="Loaded Agents", border_style="blue")
+        table.add_column("Name", style="cyan")
+        table.add_column("Description", style="white")
+        table.add_column("Model", style="yellow")
+        
+        for agent in agents:
+            table.add_row(agent.name, agent.description or "No description", agent.model)
+        
+        console.print(table)
+
+    def show_agent_detail(self, agent):
+        """Display detailed agent information."""
+        from rich.panel import Panel
+        from rich.markdown import Markdown
+        
+        content = f"**Name**: {agent.name}\n"
+        content += f"**Description**: {agent.description}\n"
+        content += f"**Model**: {agent.model}\n"
+        if agent.tools:
+            content += f"**Tools**: {', '.join(agent.tools)}\n"
+        if agent.permissions:
+            content += f"**Permissions**: {agent.permissions}\n"
+        if agent.system_prompt:
+            content += f"\n**System Prompt**:\n{agent.system_prompt[:300]}..."
+        
+        console.print(Panel(Markdown(content), title=f"Agent: {agent.name}", border_style="cyan"))
+
+    def create_agent(self, name: str, description: str):
+        """Create a new agent file."""
+        agents_dir = self.config.project_root / ".agents" / "agents"
+        agents_dir.mkdir(parents=True, exist_ok=True)
+        
+        agent_file = agents_dir / f"{name}.md"
+        if agent_file.exists():
+            console.print(f"[red]Agent already exists: {name}[/red]")
+            return
+        
+        content = f"""---
+name: {name}
+description: {description}
+model: anthropic/claude-sonnet
+system_prompt: |
+  You are a helpful coding assistant specialized in {name}.
+tools:
+  - read_file
+  - write_file
+  - edit_file
+  - glob
+  - grep
+  - bash
+permissions:
+  read_file: auto
+  write_file: prompt
+  edit_file: prompt
+  glob: auto
+  grep: auto
+  bash: prompt
+metadata:
+  version: "1.0"
+  agent-author: User
+---
+
+# {name}
+
+{description}
+
+## Configuration
+
+This agent is configured with the standard toolset. Modify the frontmatter to customize tools, permissions, and model.
+"""
+        agent_file.write_text(content)
+        console.print(f"[green]Created agent: {name}[/green]")
+        console.print(f"Path: {agent_file}")
+        
+        # Reload agents
+        self.agent_loader.discover()
+
+    def show_agents_help(self):
+        help_text = """
+**Agents Commands:**
+- `/agents` - List all agents
+- `/agents list` - List all agents
+- `/agents show <name>` - Show agent details
+- `/agents create <name> [description]` - Create new agent
+
+**Examples:**
+- `/agents create code-reviewer "Specialized in code review"`
+- `/agents show code-reviewer`
+        """
+        console.print(Panel(Markdown(help_text), title="Agents Help", border_style="cyan"))
 
 
 async def main():
