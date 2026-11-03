@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable, Awaitable
 
-from .types import Block, Message, ModelResponse, Role, StopReason, ToolCall, ToolResult, ToolSchema
+from .types import Block, Message, ModelResponse, Role, StopReason, ToolCall, ToolResult, ToolSchema, ReasoningBlock
 from .provider import Provider
 from .tools.registry import ToolRegistry
 from .permissions import PermissionGate
@@ -32,12 +32,16 @@ class AgentLoop:
         permission_gate: PermissionGate,
         system_prompt: str,
         max_steps: int = MAX_STEPS,
+        permission_callback: Callable[[str, dict[str, Any]], Awaitable[tuple[bool, str | None]]] | None = None,
+        reasoning_callback: Callable[[str], Awaitable[None]] | None = None,
     ):
         self.provider = provider
         self.registry = registry
         self.permission_gate = permission_gate
         self.system_prompt = system_prompt
         self.max_steps = max_steps
+        self.permission_callback = permission_callback
+        self.reasoning_callback = reasoning_callback
         self.state = AgentState(messages=[])
 
     def add_user_message(self, text: str) -> None:
@@ -57,6 +61,12 @@ class AgentLoop:
                 messages=self.state.messages,
                 tools=self.registry.schemas(),
             )
+
+            # Handle reasoning if present
+            reasoning_blocks = [b for b in response.blocks if isinstance(b, ReasoningBlock)]
+            for rb in reasoning_blocks:
+                if rb.text and self.reasoning_callback:
+                    await self.reasoning_callback(rb.text)
 
             # Add assistant message to history
             self.state.messages.append(Message.assistant(response.blocks))
@@ -87,8 +97,12 @@ class AgentLoop:
         return f"Error: Maximum steps ({self.max_steps}) reached."
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
-        # Check permission
-        allowed, reason = self.permission_gate.check(tool_call.name, tool_call.arguments)
+        # Check permission via callback or gate
+        if self.permission_callback:
+            allowed, reason = await self.permission_callback(tool_call.name, tool_call.arguments)
+        else:
+            allowed, reason = self.permission_gate.check(tool_call.name, tool_call.arguments)
+        
         if not allowed:
             return ToolResult(
                 call_id=tool_call.id,

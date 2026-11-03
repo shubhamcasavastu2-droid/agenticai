@@ -63,13 +63,15 @@ class CLI:
             agent_md_path,
         )
 
-        # Create agent loop
+        # Create agent loop with permission callback
         self.agent_loop = AgentLoop(
             provider=self.provider,
             registry=self.registry,
             permission_gate=self.permission_gate,
             system_prompt=system_prompt,
             max_steps=self.config.max_steps,
+            permission_callback=self._permission_callback,
+            reasoning_callback=self._reasoning_callback,
         )
 
         console.print(f"[green]Agent initialized[/green]")
@@ -106,6 +108,60 @@ class CLI:
                 result = await self.agent_loop.run()
 
             console.print(Panel(Markdown(result), title="Assistant", border_style="green"))
+
+    async def _reasoning_callback(self, reasoning: str) -> None:
+        """Display model reasoning in console."""
+        from rich.panel import Panel
+        from rich.markdown import Markdown
+        console.print(Panel(Markdown(reasoning), title="🤔 Reasoning", border_style="magenta", style="dim"))
+
+    async def _permission_callback(self, tool_name: str, args: dict[str, Any]) -> tuple[bool, str | None]:
+        """Interactive permission prompt for tool execution."""
+        # Check if already allowed
+        if tool_name in self.permission_gate._always_allow:
+            return True, None
+        if tool_name in self.permission_gate._auto_allow:
+            return True, None
+
+        # Check deny list for bash
+        if tool_name == "bash":
+            command = args.get("command", "")
+            if check_deny_list(command):
+                return False, f"Command matches deny list: {command}"
+
+        # Show tool call info
+        from rich.table import Table
+        from rich.prompt import Prompt
+        
+        table = Table(title=f"Tool Call: {tool_name}", border_style="yellow")
+        table.add_column("Parameter", style="cyan")
+        table.add_column("Value", style="white")
+        for k, v in args.items():
+            table.add_row(k, str(v)[:200])
+        console.print(table)
+
+        # Show permission options
+        console.print("\n[y] Allow once  [a] Allow always  [u] Auto-allow  [n] Deny  [d] Deny always")
+        
+        while True:
+            choice = Prompt.ask("Permission", choices=["y", "a", "u", "n", "d"], default="n")
+            
+            if choice == "y":
+                return True, None
+            elif choice == "a":
+                self.permission_gate.allow_always(tool_name)
+                console.print(f"[green]Always allowed: {tool_name}[/green]")
+                return True, None
+            elif choice == "u":
+                self.permission_gate.allow_auto(tool_name)
+                console.print(f"[green]Auto-allowed: {tool_name} (no prompts this session)[/green]")
+                return True, None
+            elif choice == "n":
+                return False, "User denied permission"
+            elif choice == "d":
+                self.permission_gate.deny(tool_name)
+                console.print(f"[red]Always denied: {tool_name}[/red]")
+                return False, "User denied permission permanently"
 
     async def handle_slash_command(self, cmd: str):
         parts = cmd.split()
@@ -162,27 +218,37 @@ class CLI:
             self.show_permissions(tool_names)
         elif subcommand == "allow":
             if len(args) < 2:
-                console.print("[red]Usage: /permission allow <tool-name> [always][/red]")
+                console.print("[red]Usage: /permission allow <tool-name> [always|auto][/red]")
+                return
+            tool_name = args[1]
+            if tool_name not in tool_names:
+                console.print(f"[red]Unknown tool: {tool_name}. Available: {', '.join(tool_names)}[/red]")
+                return
+            mode = args[2].lower() if len(args) > 2 else "once"
+            if mode == "always":
+                self.permission_gate.allow_always(tool_name)
+                console.print(f"[green]Permission set: {tool_name} = always[/green]")
+            elif mode == "auto":
+                self.permission_gate.allow_auto(tool_name)
+                console.print(f"[green]Permission set: {tool_name} = auto (no prompts)[/green]")
+            else:
+                console.print(f"[green]Permission set: {tool_name} = prompt (will ask each time)[/green]")
+        elif subcommand == "deny":
+            if len(args) < 2:
+                console.print("[red]Usage: /permission deny <tool-name> [always][/red]")
                 return
             tool_name = args[1]
             if tool_name not in tool_names:
                 console.print(f"[red]Unknown tool: {tool_name}. Available: {', '.join(tool_names)}[/red]")
                 return
             always = len(args) > 2 and args[2].lower() == "always"
-            self.permission_gate.allow_always(tool_name) if always else None
-            # For one-time allow, we just note it - the gate checks _always_allow set
-            console.print(f"[green]Permission set: {tool_name} = {'always' if always else 'prompt'}[/green]")
-        elif subcommand == "deny":
-            if len(args) < 2:
-                console.print("[red]Usage: /permission deny <tool-name>[/red]")
-                return
-            tool_name = args[1]
-            if tool_name not in tool_names:
-                console.print(f"[red]Unknown tool: {tool_name}. Available: {', '.join(tool_names)}[/red]")
-                return
-            # Remove from always_allow if present
-            self.permission_gate._always_allow.discard(tool_name)
-            console.print(f"[yellow]Permission denied: {tool_name} will prompt each time[/yellow]")
+            if always:
+                self.permission_gate.deny(tool_name)
+                console.print(f"[red]Permission set: {tool_name} = denied always[/red]")
+            else:
+                self.permission_gate._always_allow.discard(tool_name)
+                self.permission_gate._auto_allow.discard(tool_name)
+                console.print(f"[yellow]Permission set: {tool_name} = prompt (will ask each time)[/yellow]")
         elif subcommand == "reset":
             self.permission_gate.reset()
             console.print("[green]All permissions reset to defaults[/green]")
@@ -202,34 +268,42 @@ class CLI:
         
         for tool in self.registry.all():
             name = tool.name
-            is_write = name in {"write_file", "edit_file", "bash"}
-            default = "prompt" if is_write else "auto"
+            # Default is prompt for all tools (they all ask now)
+            default = "prompt"
             
             if name in self.permission_gate._always_allow:
                 current = "always"
-            elif is_write:
-                current = "prompt"
-            else:
+            elif name in self.permission_gate._auto_allow:
                 current = "auto"
+            else:
+                current = "prompt"
             
             table.add_row(name, default, current, tool.description)
         
         console.print(table)
-        console.print("\n[yellow]y[/yellow]=allow once  [yellow]a[/yellow]=always allow  [yellow]n[/yellow]=deny  [yellow]r[/yellow]=reset")
+        console.print("\n[y] Allow once  [a] Always allow  [u] Auto-allow  [n] Deny  [d] Deny always")
 
     def show_permission_help(self):
         help_text = """
 **Permission Commands:**
 - `/permission` - Show current permissions
 - `/permission list` - Show current permissions
-- `/permission allow <tool> [always]` - Allow tool (once or always)
-- `/permission deny <tool>` - Deny tool (will prompt each time)
+- `/permission allow <tool> [always|auto]` - Allow tool (once/always/auto)
+- `/permission deny <tool> [always]` - Deny tool (prompt/always)
 - `/permission reset` - Reset all permissions to defaults
 
 **Examples:**
 - `/permission allow bash always` - Always allow bash without prompting
-- `/permission deny write_file` - Require prompt for write_file
+- `/permission allow read_file auto` - Auto-allow read_file (no prompts)
+- `/permission deny write_file always` - Always deny write_file
 - `/permission reset` - Reset to defaults
+
+**Interactive Prompt Options:**
+- `y` - Allow once for this tool call
+- `a` - Allow always for this session
+- `u` - Auto-allow (no prompts for this tool this session)
+- `n` - Deny this tool call
+- `d` - Deny always for this session
         """
         console.print(Panel(Markdown(help_text), title="Permission Help", border_style="blue"))
         help_text = """

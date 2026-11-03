@@ -40,7 +40,13 @@ class ToolResult:
     type: Literal["tool_result"] = "tool_result"
 
 
-Block = TextBlock | ToolCall | ToolResult
+@dataclass
+class ReasoningBlock:
+    text: str = ""
+    type: Literal["reasoning"] = "reasoning"
+
+
+Block = TextBlock | ToolCall | ToolResult | ReasoningBlock
 
 
 @dataclass

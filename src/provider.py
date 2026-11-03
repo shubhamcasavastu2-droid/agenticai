@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from .types import Block, Message, ModelResponse, Role, StopReason, TextBlock, ToolCall, ToolResult, ToolSchema
+from .types import Block, Message, ModelResponse, ReasoningBlock, Role, StopReason, TextBlock, ToolCall, ToolResult, ToolSchema
 
 
 class Provider(ABC):
@@ -141,6 +141,10 @@ class OpenAICompatibleProvider(Provider):
 
         if message.get("content"):
             blocks.append(TextBlock(text=message["content"]))
+
+        # Capture reasoning if present (e.g., from qwen3.5, deepseek-r1, etc.)
+        if message.get("reasoning"):
+            blocks.append(ReasoningBlock(text=message["reasoning"]))
 
         for tc in message.get("tool_calls", []):
             func = tc["function"]

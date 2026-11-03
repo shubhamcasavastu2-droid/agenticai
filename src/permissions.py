@@ -77,7 +77,8 @@ def truncate_output(output: str, max_size: int = MAX_OUTPUT_SIZE) -> str:
 
 class PermissionGate:
     def __init__(self):
-        self._always_allow: set[str] = set()  # tool names allowed for session
+        self._always_allow: set[str] = set()  # tool names always allowed
+        self._auto_allow: set[str] = set()    # tool names auto-allowed (no prompt)
 
     def check(self, tool_name: str, args: dict[str, Any]) -> tuple[bool, str | None]:
         """
@@ -86,8 +87,8 @@ class PermissionGate:
         """
         if tool_name in self._always_allow:
             return True, None
-
-        if not is_write_tool(tool_name):
+        
+        if tool_name in self._auto_allow:
             return True, None
 
         # For bash, check deny list
@@ -95,11 +96,19 @@ class PermissionGate:
             command = args.get("command", "")
             if check_deny_list(command):
                 return False, f"Command matches deny list: {command}"
-
+        
         return False, f"Tool '{tool_name}' requires permission"
 
     def allow_always(self, tool_name: str) -> None:
         self._always_allow.add(tool_name)
 
+    def allow_auto(self, tool_name: str) -> None:
+        self._auto_allow.add(tool_name)
+
+    def deny(self, tool_name: str) -> None:
+        self._always_allow.discard(tool_name)
+        self._auto_allow.discard(tool_name)
+
     def reset(self) -> None:
         self._always_allow.clear()
+        self._auto_allow.clear()

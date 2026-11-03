@@ -10,3 +10,12 @@
   - test: tests/__init__.py, tests/__pycache__/__init__.cpython-310.pyc, tests/__pycache__/test_tools.cpython-310-pytest-9.1.1.pyc, tests/test_tools.py
   - chore: .env, .env.example, .vscode/launch.json, .vscode/settings.json, pyproject.toml ... (+33 more)
 
+## [22227769] - 2026-11-03
+- **Type**: feat
+- **Author**: jaibharat27
+- **Description**: Add /permission slash command to view and manage tool permissions
+- **Files** (4):
+  - feat: src/cli.py
+  - docs: CHANGELOG.md
+  - chore: src/__pycache__/cli.cpython-310.pyc, src/__pycache__/cli.cpython-314.pyc
+
