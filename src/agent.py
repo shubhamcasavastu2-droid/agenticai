@@ -38,6 +38,7 @@ class AgentLoop:
         max_steps: int = MAX_STEPS,
         permission_callback: Callable[[str, dict[str, Any]], Awaitable[tuple[bool, str | None]]] | None = None,
         reasoning_callback: Callable[[str], Awaitable[None]] | None = None,
+        tool_callback: Callable[[str, dict[str, Any], str, bool], Awaitable[None]] | None = None,
     ):
         self.provider = provider
         self.registry = registry
@@ -46,6 +47,7 @@ class AgentLoop:
         self.max_steps = max_steps
         self.permission_callback = permission_callback
         self.reasoning_callback = reasoning_callback
+        self.tool_callback = tool_callback
         self.state = AgentState(messages=[])
 
     def add_user_message(self, text: str) -> None:
@@ -114,14 +116,29 @@ class AgentLoop:
                 is_error=True,
             )
 
+        # Notify tool call start
+        if self.tool_callback:
+            await self.tool_callback(tool_call.name, tool_call.arguments, "started", False)
+
         # Execute tool
         try:
             output = await self.registry.execute(tool_call.name, **tool_call.arguments)
+            
+            # Notify tool call completed
+            if self.tool_callback:
+                await self.tool_callback(tool_call.name, tool_call.arguments, output, False)
+            
             return ToolResult(call_id=tool_call.id, output=output, is_error=False)
         except Exception as e:
+            error_output = f"Tool error: {type(e).__name__}: {e}"
+            
+            # Notify tool call error
+            if self.tool_callback:
+                await self.tool_callback(tool_call.name, tool_call.arguments, error_output, True)
+            
             return ToolResult(
                 call_id=tool_call.id,
-                output=f"Tool error: {type(e).__name__}: {e}",
+                output=error_output,
                 is_error=True,
             )
 

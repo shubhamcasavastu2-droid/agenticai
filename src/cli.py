@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from typing import Any
 
 from rich.console import Console
@@ -26,6 +27,9 @@ from .tools import (
 )
 
 console = Console()
+
+# Check if running in interactive mode (TTY)
+IS_INTERACTIVE = sys.stdin.isatty()
 
 
 class CLI:
@@ -85,6 +89,7 @@ class CLI:
             max_steps=self.config.max_steps,
             permission_callback=self._permission_callback,
             reasoning_callback=self._reasoning_callback,
+            tool_callback=self._tool_callback,
         )
 
         console.print("[green]Agent initialized[/green]")
@@ -131,6 +136,40 @@ class CLI:
         from rich.panel import Panel
         console.print(Panel(Markdown(reasoning), title="🤔 Reasoning", border_style="magenta", style="dim"))
 
+    async def _tool_callback(self, tool_name: str, args: dict[str, Any], output: str, is_error: bool) -> None:
+        """Display tool execution info in console."""
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
+        
+        if output == "started":
+            # Show tool starting
+            table = Table(title=f"▶️  Running: {tool_name}", border_style="cyan")
+            table.add_column("Parameter", style="cyan")
+            table.add_column("Value", style="white")
+            for k, v in args.items():
+                table.add_row(k, str(v)[:300])
+            console.print(table)
+        else:
+            # Show tool result
+            if is_error:
+                border_style = "red"
+                title = f"❌ {tool_name} (error)"
+            else:
+                border_style = "green"
+                title = f"✅ {tool_name} (done)"
+            
+            # Truncate output for display
+            display_output = output[:500]
+            if len(output) > 500:
+                display_output += f"\n... (truncated, {len(output)} total chars)"
+            
+            console.print(Panel(
+                Text(display_output),
+                title=title,
+                border_style=border_style,
+            ))
+
     async def _permission_callback(self, tool_name: str, args: dict[str, Any]) -> tuple[bool, str | None]:
         """Interactive permission prompt for tool execution."""
         # Check if already allowed
@@ -144,6 +183,11 @@ class CLI:
             command = args.get("command", "")
             if check_deny_list(command):
                 return False, f"Command matches deny list: {command}"
+
+        # Non-interactive mode: deny by default (safe)
+        if not IS_INTERACTIVE:
+            console.print(f"[yellow]Non-interactive: denying {tool_name} (use /permission allow <tool> auto to pre-allow)[/yellow]")
+            return False, "Non-interactive mode: tool not pre-allowed"
 
         # Show tool call info
         from rich.prompt import Prompt
@@ -247,8 +291,8 @@ class CLI:
                 console.print("[red]Usage: /skills create <skill-name> [description][/red]")
                 return
             skill_name = args[1]
-            description = " ".join(args[2:]) if len(args) > 2 else f"Skill: {skill_name}"
-            self.create_skill(skill_name, description)
+            description = " ".join(args[2:]) if len(args) > 2 else ""
+            await self.create_skill_interactive(skill_name, description)
         else:
             console.print(f"[red]Unknown skills subcommand: {subcommand}[/red]")
             self.show_skills_help()
@@ -317,6 +361,148 @@ class CLI:
             content += f"\n---\n{skill.content}"
 
         console.print(Panel(Markdown(content), title=f"Skill: {skill.name}", border_style="cyan"))
+
+    async def create_skill_interactive(self, name: str, description: str):
+        """Create a new skill interactively by asking clarifying questions, then using agent to generate."""
+        console.print(f"[cyan]Designing skill: {name}[/cyan]")
+        if description:
+            console.print(f"Initial idea: {description}\n")
+        
+        # If not interactive (piped input), use description directly
+        if not IS_INTERACTIVE:
+            console.print("[yellow]Non-interactive mode: using description to generate skill[/yellow]")
+            answers = {
+                'trigger': description,
+                'inputs': 'User request',
+                'outputs': 'Generated skill file',
+                'tools': 'all',
+                'workflow': 'Generate skill from description',
+                'constraints': 'Follow standard skill format',
+            }
+        else:
+            # Ask clarifying questions directly
+            questions = [
+                ("trigger", "When should this skill be used? (e.g., 'user wants to plan a project', 'code review needed')"),
+                ("inputs", "What inputs does the skill need from the user?"),
+                ("outputs", "What should the skill produce? (e.g., plan document, code changes, analysis)"),
+                ("tools", "What tools does it need? (read_file, write_file, edit_file, glob, grep, bash - or 'all')"),
+                ("workflow", "Describe the step-by-step workflow in 3-5 steps"),
+                ("constraints", "Any special requirements, constraints, or example use cases?"),
+            ]
+            
+            answers = {}
+            for key, question in questions:
+                answer = Prompt.ask(f"[bold cyan]{question}[/bold cyan]")
+                if answer.lower() in ("done", "finish", "complete", "skip"):
+                    console.print("[yellow]Skipping remaining questions...[/yellow]")
+                    break
+                answers[key] = answer
+        
+        # Build design prompt for agent
+        design_prompt = f"""Create a complete SKILL.md file for a skill named "{name}".
+
+User requirements:
+- Trigger: {answers.get('trigger', 'Not specified')}
+- Inputs: {answers.get('inputs', 'Not specified')}
+- Outputs: {answers.get('outputs', 'Not specified')}
+- Tools: {answers.get('tools', 'all')}
+- Workflow: {answers.get('workflow', 'Not specified')}
+- Constraints: {answers.get('constraints', 'None')}
+
+Generate a complete skill file with:
+1. YAML frontmatter (name, description, license, compatibility, metadata)
+2. Markdown content with:
+   - ## When to use (trigger conditions)
+   - ## Workflow (step-by-step)
+   - ## Tools required
+   - ## Inputs/Outputs
+   - Any references/scripts/assets sections if needed
+
+Output ONLY the skill file content, nothing else."""
+
+        # Use agent to generate the skill
+        from .agent import AgentLoop
+        from .permissions import PermissionGate
+        
+        design_permission = PermissionGate()
+        design_permission.allow_auto("read_file")
+        design_permission.allow_auto("write_file")
+        design_permission.allow_auto("glob")
+        design_permission.allow_auto("grep")
+        design_permission.allow_auto("bash")
+        
+        async def auto_allow(tool_name: str, args: dict[str, Any]) -> tuple[bool, str | None]:
+            return True, None
+        
+        design_agent = AgentLoop(
+            provider=self.provider,
+            registry=self.registry,
+            permission_gate=design_permission,
+            system_prompt=design_prompt,
+            max_steps=3,
+            permission_callback=auto_allow,
+            reasoning_callback=self._reasoning_callback,
+            tool_callback=self._tool_callback,
+        )
+        
+        design_agent.add_user_message(design_prompt)
+        
+        with console.status("[bold cyan]Generating skill...[/bold cyan]"):
+            final_design = await design_agent.run()
+        
+        if not final_design or final_design.startswith("Error"):
+            console.print(f"[red]Failed to generate skill: {final_design}[/red]")
+            return
+        
+        # Show final design for confirmation
+        console.print(Panel(Markdown(final_design), title="📋 Generated Skill", border_style="green"))
+        
+        if not IS_INTERACTIVE:
+            console.print("[yellow]Non-interactive: auto-confirming skill creation[/yellow]")
+            confirm = "y"
+        else:
+            confirm = Prompt.ask("\n[bold]Create this skill?[/bold]", choices=["y", "n"], default="y")
+        
+        if confirm != "y":
+            console.print("[yellow]Skill creation cancelled[/yellow]")
+            return
+        
+        # Extract and save skill
+        self._save_skill_from_design(name, final_design)
+
+    def _save_skill_from_design(self, name: str, design: str):
+        """Save skill from agent-generated design."""
+        skills_dir = self.config.project_root / ".agents" / "skills" / name
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        
+        skill_file = skills_dir / "SKILL.md"
+        if skill_file.exists():
+            console.print(f"[red]Skill already exists: {name}[/red]")
+            return
+        
+        # Extract frontmatter and content from design
+        # If design already has frontmatter, use it; otherwise wrap it
+        if design.startswith("---"):
+            content = design
+        else:
+            content = f"""---
+name: {name}
+description: Auto-generated skill
+license: MIT
+compatibility: Python 3.11+
+metadata:
+  version: "1.0"
+  skill-author: Agent Designer
+---
+
+{design}"""
+        
+        skill_file.write_text(content)
+        console.print(f"[green]Created skill: {name}[/green]")
+        console.print(f"Path: {skill_file}")
+        
+        # Reload skills
+        self.skill_loader.discover()
 
     def create_skill(self, name: str, description: str):
         """Create a new skill file."""
