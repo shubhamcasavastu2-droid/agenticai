@@ -12,6 +12,13 @@ from rich.prompt import Prompt
 from .agent import AgentLoop
 from .agents import AgentLoader
 from .config import Config
+from .logger import (
+    log_command,
+    log_error,
+    log_permission,
+    log_reasoning,
+    log_tool_call,
+)
 from .permissions import PermissionGate, check_deny_list
 from .provider import OpenAICompatibleProvider
 from .skills import SkillLoader
@@ -112,6 +119,7 @@ class CLI:
                 console.print("\n[yellow]Interrupted. Type /exit to quit.[/yellow]")
             except Exception as e:
                 console.print(f"[red]Error: {e}[/red]")
+                log_error(str(e))
 
     async def handle_input(self, user_input: str):
         if not user_input:
@@ -135,6 +143,7 @@ class CLI:
         from rich.markdown import Markdown
         from rich.panel import Panel
         console.print(Panel(Markdown(reasoning), title="🤔 Reasoning", border_style="magenta", style="dim"))
+        log_reasoning(reasoning)
 
     async def _tool_callback(self, tool_name: str, args: dict[str, Any], output: str, is_error: bool) -> None:
         """Display tool execution info in console."""
@@ -169,24 +178,30 @@ class CLI:
                 title=title,
                 border_style=border_style,
             ))
+        
+        log_tool_call(tool_name, args, output, is_error)
 
     async def _permission_callback(self, tool_name: str, args: dict[str, Any]) -> tuple[bool, str | None]:
         """Interactive permission prompt for tool execution."""
         # Check if already allowed
         if tool_name in self.permission_gate._always_allow:
+            log_permission(tool_name, True, "Always allowed")
             return True, None
         if tool_name in self.permission_gate._auto_allow:
+            log_permission(tool_name, True, "Auto-allowed")
             return True, None
 
         # Check deny list for bash
         if tool_name == "bash":
             command = args.get("command", "")
             if check_deny_list(command):
+                log_permission(tool_name, False, "Deny list match")
                 return False, f"Command matches deny list: {command}"
 
         # Non-interactive mode: deny by default (safe)
         if not IS_INTERACTIVE:
             console.print(f"[yellow]Non-interactive: denying {tool_name} (use /permission allow <tool> auto to pre-allow)[/yellow]")
+            log_permission(tool_name, False, "Non-interactive mode: tool not pre-allowed")
             return False, "Non-interactive mode: tool not pre-allowed"
 
         # Show tool call info
@@ -207,25 +222,31 @@ class CLI:
             choice = Prompt.ask("Permission", choices=["y", "a", "u", "n", "d"], default="n")
 
             if choice == "y":
+                log_permission(tool_name, True, "Allowed once")
                 return True, None
             elif choice == "a":
                 self.permission_gate.allow_always(tool_name)
                 console.print(f"[green]Always allowed: {tool_name}[/green]")
+                log_permission(tool_name, True, "Always allowed")
                 return True, None
             elif choice == "u":
                 self.permission_gate.allow_auto(tool_name)
                 console.print(f"[green]Auto-allowed: {tool_name} (no prompts this session)[/green]")
+                log_permission(tool_name, True, "Auto-allowed")
                 return True, None
             elif choice == "n":
+                log_permission(tool_name, False, "Denied once")
                 return False, "User denied permission"
             elif choice == "d":
                 self.permission_gate.deny(tool_name)
                 console.print(f"[red]Always denied: {tool_name}[/red]")
+                log_permission(tool_name, False, "Denied always")
                 return False, "User denied permission permanently"
 
     async def handle_slash_command(self, cmd: str):
         parts = cmd.split()
         command = parts[0].lower()
+        log_command(cmd)
 
         if command == "/help":
             self.show_help()

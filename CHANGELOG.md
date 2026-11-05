@@ -57,3 +57,13 @@
   - test: tests/__pycache__/__init__.cpython-310.pyc, tests/__pycache__/__init__.cpython-314.pyc, tests/__pycache__/test_tools.cpython-310-pytest-9.1.1.pyc, tests/__pycache__/test_tools.cpython-314-pytest-9.2.0.pyc
   - chore: pyproject.toml, src/__pycache__/__init__.cpython-310.pyc, src/__pycache__/__init__.cpython-314.pyc, src/__pycache__/agent.cpython-310.pyc, src/__pycache__/agent.cpython-314.pyc ... (+32 more)
 
+## [00ecc7ac] - 2026-11-04
+- **Type**: feat
+- **Author**: jaibharat27
+- **Description**: Add non-interactive skill creation with agent-driven design: /skills create works in piped/heredoc input, TTY detection, async permission callback, auto-confirm in non-interactive mode
+- **Files** (43):
+  - feat: src/agent.py, src/cli.py
+  - docs: .agents/skills/my-test-skill/SKILL.md, CHANGELOG.md, SKILL.md
+  - test: tests/__pycache__/__init__.cpython-310.pyc, tests/__pycache__/test_tools.cpython-310-pytest-9.1.1.pyc
+  - chore: src/__pycache__/__init__.cpython-310.pyc, src/__pycache__/__init__.cpython-314.pyc, src/__pycache__/agent.cpython-310.pyc, src/__pycache__/agent.cpython-314.pyc, src/__pycache__/agents.cpython-310.pyc ... (+31 more)
+
