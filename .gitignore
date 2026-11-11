@@ -41,3 +41,12 @@ target/
 
 # Misc
 .terraform/
+
+# Agent workspace artifacts
+agent-workspace/recordings/
+skills/git-change-tracker/
+
+# Submodule noise
+browser-harness/.DS_Store
+browser-harness/agent-workspace/
+scientific-agent-skills/skills/git-change-tracker/
