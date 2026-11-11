@@ -1,11 +1,43 @@
+# OS
 .DS_Store
+Thumbs.db
+
+# Editors / IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# Python
 __pycache__/
-*.pyc
-node_modules/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
 .env
-*.log
-target/
+.env.*
+!.env.example
+.tox/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Build / dist
 dist/
 build/
+target/
+*.egg
+
+# Logs
+*.log
+
+# Misc
+.terraform/
