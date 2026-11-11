@@ -11,24 +11,32 @@ from rich.prompt import Prompt
 
 from .agent import AgentLoop
 from .agents import AgentLoader
+from .completion import CompletionResolver
 from .config import Config
 from .logger import (
     log_command,
     log_error,
+    log_exception,
     log_permission,
     log_reasoning,
     log_tool_call,
 )
 from .permissions import PermissionGate, check_deny_list
-from .provider import OpenAICompatibleProvider
+from .provider import OpenAICompatibleProvider, ProviderAuthenticationError
 from .skills import SkillLoader
-from .system_prompt import build_system_prompt, get_tool_descriptions
+from .system_prompt import (
+    build_system_prompt,
+    build_user_input_refurbish_prompt,
+    get_tool_descriptions,
+)
 from .tools import (
     ToolRegistry,
+    create_ask_user_tool,
     create_bash_tool,
     create_edit_file_tool,
     create_glob_tool,
     create_grep_tool,
+    create_plan_tool,
     create_read_file_tool,
     create_write_file_tool,
 )
@@ -46,7 +54,10 @@ class CLI:
         self.registry = ToolRegistry()
         self.permission_gate = PermissionGate()
         self.agent_loop: AgentLoop | None = None
+        self.input_normalizer_loop: AgentLoop | None = None
+        self.completion_resolver: CompletionResolver | None = None
         self.running = True
+        self.todos: list[dict[str, str]] = []
 
     async def initialize(self):
         # Create provider
@@ -54,6 +65,12 @@ class CLI:
             base_url=self.config.base_url,
             api_key=self.config.api_key,
             model=self.config.model,
+            timeout=self.config.request_timeout_seconds,
+            max_completion_tokens=self.config.max_completion_tokens,
+        )
+        self.completion_resolver = CompletionResolver(
+            self.provider,
+            max_attempts=self.config.max_completion_attempts,
         )
 
         # Register tools
@@ -64,6 +81,8 @@ class CLI:
         self.registry.register(create_glob_tool(self.config.project_root, max_output))
         self.registry.register(create_grep_tool(self.config.project_root, max_output))
         self.registry.register(create_bash_tool(self.config.project_root, max_output))
+        self.registry.register(create_ask_user_tool(self._ask_user))
+        self.registry.register(create_plan_tool(self._present_plan))
 
         # Load skills
         skills_dir = self.config.project_root / ".agents" / "skills"
@@ -97,10 +116,31 @@ class CLI:
             permission_callback=self._permission_callback,
             reasoning_callback=self._reasoning_callback,
             tool_callback=self._tool_callback,
+            clarification_callback=self._clarify_empty_response,
+            context_window_tokens=self.config.context_window_tokens,
+            max_completion_tokens=self.config.max_completion_tokens,
+        )
+        self.input_normalizer_loop = AgentLoop(
+            provider=self.provider,
+            registry=ToolRegistry(),
+            permission_gate=PermissionGate(),
+            system_prompt=(
+                "You normalize user requests for a coding assistant. Return the objective and "
+                "actionable tasks in English, regardless of the input language. Preserve intent, "
+                "do not invent requirements, and do not ask the user questions or answer the task. "
+                "Return only the requested normalized objective and task list."
+            ),
+            max_steps=3,
+            reasoning_callback=self._reasoning_callback,
+            clarification_callback=self._clarify_empty_response,
+            context_window_tokens=self.config.context_window_tokens,
+            max_completion_tokens=self.config.max_completion_tokens,
         )
 
         console.print("[green]Agent initialized[/green]")
         console.print(f"Model: [cyan]{self.config.model}[/cyan]")
+        console.print(f"Max output tokens per response: [cyan]{self.config.max_completion_tokens}[/cyan]")
+        console.print(f"Context window budget: [cyan]{self.config.context_window_tokens}[/cyan]")
         console.print(f"Project: [cyan]{self.config.project_root}[/cyan]")
         if self.skill_loader._skills:
             console.print(f"Skills loaded: [cyan]{len(self.skill_loader._skills)}[/cyan]")
@@ -114,12 +154,17 @@ class CLI:
         while self.running:
             try:
                 user_input = Prompt.ask("[bold blue]>>[/bold blue]")
+
                 await self.handle_input(user_input.strip())
             except (KeyboardInterrupt, EOFError):
                 console.print("\n[yellow]Interrupted. Type /exit to quit.[/yellow]")
-            except Exception as e:
-                console.print(f"[red]Error: {e}[/red]")
+            except ProviderAuthenticationError as e:
+                console.print(f"[red]Authentication error: {e}[/red]")
                 log_error(str(e))
+            except Exception as e:
+                detail = str(e).strip() or repr(e)
+                console.print(f"[red]Error ({type(e).__name__}): {detail}[/red]")
+                log_exception(e)
 
     async def handle_input(self, user_input: str):
         if not user_input:
@@ -131,12 +176,53 @@ class CLI:
             return
 
         # Regular message to agent
-        if self.agent_loop:
-            self.agent_loop.add_user_message(user_input)
+        if self.agent_loop and self.input_normalizer_loop:
+            normalization_prompt = build_user_input_refurbish_prompt(user_input)
+            self.input_normalizer_loop.add_user_message(normalization_prompt)
+            normalized_input = await self.input_normalizer_loop.run()
+            self.input_normalizer_loop.clear_history()
+            if normalized_input.startswith("Error:"):
+                console.print(
+                    Panel(
+                        Markdown(normalized_input),
+                        title="Input normalization failed",
+                        border_style="red",
+                    )
+                )
+                return
+            console.print(
+                Panel(
+                    Markdown(normalized_input),
+                    title="Normalized input sent to coding agent",
+                    border_style="cyan",
+                )
+            )
+            self.agent_loop.add_user_message(normalized_input)
+            self._create_todos_from_normalized(normalized_input)
+            if self.completion_resolver is None:
+                raise RuntimeError("Completion resolver is not initialized")
+            completion = await self.completion_resolver.run(
+                self.agent_loop,
+                original_request=user_input,
+                normalized_request=normalized_input,
+            )
 
-            result = await self.agent_loop.run()
-
-            console.print(Panel(Markdown(result), title="Assistant", border_style="green"))
+            if completion.complete:
+                console.print(
+                    Panel(Markdown(completion.response), title="Assistant", border_style="green")
+                )
+            else:
+                status = (
+                    f"Completion not verified after {completion.attempts} attempts. "
+                    f"Remaining issue: {completion.findings or 'The reviewer could not confirm completion.'}"
+                )
+                console.print(
+                    Panel(
+                        Markdown(f"{completion.response}\n\n**{status}**"),
+                        title="Task not confirmed",
+                        border_style="yellow",
+                    )
+                )
 
     async def _reasoning_callback(self, reasoning: str) -> None:
         """Display model reasoning in console."""
@@ -183,6 +269,10 @@ class CLI:
 
     async def _permission_callback(self, tool_name: str, args: dict[str, Any]) -> tuple[bool, str | None]:
         """Interactive permission prompt for tool execution."""
+        if tool_name in {"ask_user", "plan"}:
+            log_permission(tool_name, True, "Tool performs its own user interaction")
+            return True, None
+
         # Check if already allowed
         if tool_name in self.permission_gate._always_allow:
             log_permission(tool_name, True, "Always allowed")
@@ -243,6 +333,75 @@ class CLI:
                 log_permission(tool_name, False, "Denied always")
                 return False, "User denied permission permanently"
 
+    async def _ask_user(self, question: str, options: list[str] | None) -> str:
+        if not IS_INTERACTIVE:
+            raise RuntimeError("ask_user requires an interactive terminal")
+        if options:
+            return Prompt.ask(f"[bold cyan]{question}[/bold cyan]", choices=options)
+        return Prompt.ask(f"[bold cyan]{question}[/bold cyan]")
+
+    async def _clarify_empty_response(self, question: str) -> str:
+        return await self._ask_user(question, None)
+
+    def _create_todos_from_normalized(self, normalized_input: str) -> None:
+        """Parse tasks from normalized input and create a todo list."""
+        self.todos = []
+        marker = "Tasks to achieve:"
+        if marker not in normalized_input:
+            return
+        tasks_section = normalized_input.split(marker, 1)[1]
+        for line in tasks_section.splitlines():
+            line = line.strip()
+            if line.startswith("- "):
+                task = line[2:].strip()
+                if task:
+                    self.todos.append({"title": task, "status": "pending"})
+        self._display_todos()
+
+    def _display_todos(self) -> None:
+        """Display the current todo list."""
+        from rich.table import Table
+
+        if not self.todos:
+            return
+        table = Table(title="Todo List", border_style="blue")
+        table.add_column("#", style="cyan", width=4)
+        table.add_column("Status", style="yellow", width=10)
+        table.add_column("Task", style="white")
+        for index, todo in enumerate(self.todos, 1):
+            status = "✅ Done" if todo["status"] == "done" else "⏳ Pending"
+            table.add_row(str(index), status, todo["title"])
+        console.print(table)
+
+    async def _present_plan(
+        self,
+        title: str,
+        summary: str,
+        steps: list[str],
+        risks: list[str],
+    ) -> str:
+        if not IS_INTERACTIVE:
+            raise RuntimeError("plan approval requires an interactive terminal")
+
+        plan_markdown = f"{summary}\n\n## Steps\n"
+        plan_markdown += "\n".join(f"{index}. {step}" for index, step in enumerate(steps, 1))
+        if risks:
+            plan_markdown += "\n\n## Risks and assumptions\n"
+            plan_markdown += "\n".join(f"- {risk}" for risk in risks)
+        console.print(Panel(Markdown(plan_markdown), title=f"Plan: {title}", border_style="cyan"))
+
+        decision = Prompt.ask(
+            "Plan decision",
+            choices=["approve", "revise", "reject"],
+            default="reject",
+        )
+        if decision == "approve":
+            return "APPROVED: You may proceed with this plan."
+        if decision == "revise":
+            feedback = Prompt.ask("What should change?", default="Please revise the plan")
+            return f"REVISION REQUESTED: {feedback}"
+        return "REJECTED: Do not proceed with implementation."
+
     async def handle_slash_command(self, cmd: str):
         parts = cmd.split()
         command = parts[0].lower()
@@ -265,9 +424,15 @@ class CLI:
                         base_url=self.config.base_url,
                         api_key=self.config.api_key,
                         model=new_model,
+                        timeout=self.config.request_timeout_seconds,
+                        max_completion_tokens=self.config.max_completion_tokens,
                     )
                     if self.agent_loop:
                         self.agent_loop.provider = self.provider
+                    if self.input_normalizer_loop:
+                        self.input_normalizer_loop.provider = self.provider
+                    if self.completion_resolver:
+                        self.completion_resolver.provider = self.provider
                 console.print(f"[green]Model changed to: {new_model}[/green]")
             else:
                 console.print(f"Current model: [cyan]{self.config.model}[/cyan]")
@@ -283,6 +448,10 @@ class CLI:
             await self.handle_skills_command(parts[1:] if len(parts) > 1 else [])
         elif command == "/agents":
             await self.handle_agents_command(parts[1:] if len(parts) > 1 else [])
+        elif command == "/plan":
+            await self.handle_plan_command()
+        elif command == "/ask":
+            await self.handle_ask_command()
         else:
             console.print(f"[red]Unknown command: {command}[/red]")
             self.show_help()
@@ -338,16 +507,37 @@ class CLI:
                 self.show_agent_detail(agent)
             else:
                 console.print(f"[red]Agent not found: {agent_name}[/red]")
-        elif subcommand == "create":
-            if len(args) < 2:
-                console.print("[red]Usage: /agents create <agent-name> [description][/red]")
-                return
-            agent_name = args[1]
-            description = " ".join(args[2:]) if len(args) > 2 else f"Agent: {agent_name}"
-            self.create_agent(agent_name, description)
         else:
             console.print(f"[red]Unknown agents subcommand: {subcommand}[/red]")
             self.show_agents_help()
+
+    async def handle_plan_command(self):
+        """Interactive /plan command: create and present a plan for approval."""
+        if not IS_INTERACTIVE:
+            console.print("[yellow]/plan requires an interactive terminal[/yellow]")
+            return
+        title = Prompt.ask("[bold cyan]Plan title[/bold cyan]")
+        summary = Prompt.ask("[bold cyan]Summary[/bold cyan]")
+        steps_input = Prompt.ask("[bold cyan]Steps (comma-separated)[/bold cyan]")
+        steps = [s.strip() for s in steps_input.split(",") if s.strip()]
+        if not steps:
+            console.print("[red]At least one step is required[/red]")
+            return
+        risks_input = Prompt.ask("[bold cyan]Risks (comma-separated, optional)[/bold cyan]", default="")
+        risks = [r.strip() for r in risks_input.split(",") if r.strip()]
+        result = await self._present_plan(title, summary, steps, risks)
+        console.print(f"[green]{result}[/green]")
+
+    async def handle_ask_command(self):
+        """Interactive /ask command: ask the user a question, optionally with fixed choices."""
+        if not IS_INTERACTIVE:
+            console.print("[yellow]/ask requires an interactive terminal[/yellow]")
+            return
+        question = Prompt.ask("[bold cyan]Question[/bold cyan]")
+        options_input = Prompt.ask("[bold cyan]Options (comma-separated, optional)[/bold cyan]", default="")
+        options = [o.strip() for o in options_input.split(",") if o.strip()] or None
+        answer = await self._ask_user(question, options)
+        console.print(f"[green]Answer: {answer}[/green]")
 
     def show_skills(self):
         """Display all loaded skills."""
@@ -454,6 +644,9 @@ Output ONLY the skill file content, nothing else."""
         
         async def auto_allow(tool_name: str, args: dict[str, Any]) -> tuple[bool, str | None]:
             return True, None
+
+        if self.provider is None:
+            raise RuntimeError("Provider is not initialized")
         
         design_agent = AgentLoop(
             provider=self.provider,
@@ -464,6 +657,8 @@ Output ONLY the skill file content, nothing else."""
             permission_callback=auto_allow,
             reasoning_callback=self._reasoning_callback,
             tool_callback=self._tool_callback,
+            context_window_tokens=self.config.context_window_tokens,
+            max_completion_tokens=self.config.max_completion_tokens,
         )
         
         design_agent.add_user_message(design_prompt)
@@ -688,6 +883,8 @@ metadata:
 - `/clear` - Clear conversation history
 - `/model [name]` - Show or change model
 - `/permission [list|allow|deny|reset]` - View/set tool permissions
+- `/plan` - Create and present a plan for approval
+- `/ask` - Ask a question, optionally with fixed choices
 - `/exit` - Exit the CLI
 
 **Tools available to the agent:**
@@ -697,6 +894,11 @@ metadata:
 - `glob` - Find files matching a pattern
 - `grep` - Search for regex pattern in files
 - `bash` - Execute shell commands
+- `ask_user` - Ask you a question, optionally with fixed choices
+- `plan` - Present a plan and collect approval, revision feedback, or rejection
+
+**Todo list:**
+- A todo list is created automatically from your message's tasks on every input.
 
 **Permission model:**
 - Read-only tools (read_file, glob, grep) run automatically
@@ -713,8 +915,10 @@ metadata:
 - `/clear` - Clear conversation history
 - `/model [name]` - Show or change model
 - `/permission [list|allow|deny|reset]` - View/set tool permissions
+- `/plan` - Create and present a plan for approval
+- `/ask` - Ask a question, optionally with fixed choices
 - `/skills [list|show|create]` - Manage skills
-- `/agents [list|show|create]` - Manage agents
+- `/agents [list|show]` - Manage agents
 - `/exit` - Exit the CLI
 
 **Tools available to the agent:**
@@ -724,6 +928,11 @@ metadata:
 - `glob` - Find files matching a pattern
 - `grep` - Search for regex pattern in files
 - `bash` - Execute shell commands
+- `ask_user` - Ask you a question, optionally with fixed choices
+- `plan` - Present a plan and collect approval, revision feedback, or rejection
+
+**Todo list:**
+- A todo list is created automatically from your message's tasks on every input.
 
 **Permission model:**
 - Read-only tools (read_file, glob, grep) run automatically
@@ -774,55 +983,6 @@ metadata:
 
         console.print(Panel(Markdown(content), title=f"Agent: {agent.name}", border_style="cyan"))
 
-    def create_agent(self, name: str, description: str):
-        """Create a new agent file."""
-        agents_dir = self.config.project_root / ".agents" / "agents"
-        agents_dir.mkdir(parents=True, exist_ok=True)
-
-        agent_file = agents_dir / f"{name}.md"
-        if agent_file.exists():
-            console.print(f"[red]Agent already exists: {name}[/red]")
-            return
-
-        content = f"""---
-name: {name}
-description: {description}
-model: anthropic/claude-sonnet
-system_prompt: |
-  You are a helpful coding assistant specialized in {name}.
-tools:
-  - read_file
-  - write_file
-  - edit_file
-  - glob
-  - grep
-  - bash
-permissions:
-  read_file: auto
-  write_file: prompt
-  edit_file: prompt
-  glob: auto
-  grep: auto
-  bash: prompt
-metadata:
-  version: "1.0"
-  agent-author: User
----
-
-# {name}
-
-{description}
-
-## Configuration
-
-This agent is configured with the standard toolset. Modify the frontmatter to customize tools, permissions, and model.
-"""
-        agent_file.write_text(content)
-        console.print(f"[green]Created agent: {name}[/green]")
-        console.print(f"Path: {agent_file}")
-
-        # Reload agents
-        self.agent_loader.discover()
 
     def show_agents_help(self):
         help_text = """

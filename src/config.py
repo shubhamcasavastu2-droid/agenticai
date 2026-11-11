@@ -12,6 +12,10 @@ class Config:
     base_url: str = "http://localhost:11434/v1"
     api_key: str = "ollama"
     model: str = "llama3.1"
+    request_timeout_seconds: float = 300.0
+    max_completion_tokens: int = 8192
+    context_window_tokens: int = 32768
+    max_completion_attempts: int = 3
     max_output_size: int = 8000
     max_steps: int = 50
     project_root: Path = field(default_factory=Path.cwd)
@@ -31,6 +35,10 @@ class Config:
             base_url=os.getenv("AGENTIC_BASE_URL", "http://localhost:11434/v1"),
             api_key=os.getenv("AGENTIC_API_KEY", "ollama"),
             model=os.getenv("AGENTIC_MODEL", "llama3.1"),
+            request_timeout_seconds=float(os.getenv("AGENTIC_REQUEST_TIMEOUT_SECONDS", "300")),
+            max_completion_tokens=int(os.getenv("AGENTIC_MAX_COMPLETION_TOKENS", "8192")),
+            context_window_tokens=int(os.getenv("AGENTIC_CONTEXT_WINDOW_TOKENS", "32768")),
+            max_completion_attempts=int(os.getenv("AGENTIC_MAX_COMPLETION_ATTEMPTS", "3")),
             max_output_size=int(os.getenv("AGENTIC_MAX_OUTPUT_SIZE", "8000")),
             max_steps=int(os.getenv("AGENTIC_MAX_STEPS", "50")),
             project_root=Path(os.getenv("AGENTIC_PROJECT_ROOT", ".")).resolve(),

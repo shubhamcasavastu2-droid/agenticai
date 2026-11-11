@@ -1,0 +1,53 @@
+# Network - Topology Diagram Template
+
+```mermaid
+graph TB
+    subgraph "DMZ"
+        LB[Load Balancer]
+        WAF[WAF]
+    end
+    
+    subgraph "Public Subnet"
+        NAT[NAT Gateway]
+        Bastion[Bastion Host]
+    end
+    
+    subgraph "Private Subnet - App Tier"
+        App1[App Server 1]
+        App2[App Server 2]
+        App3[App Server 3]
+    end
+    
+    subgraph "Private Subnet - Data Tier"
+        DBPrimary[(Primary DB)]
+        DBReplica[(Read Replica)]
+        Cache[(Redis Cache)]
+    end
+    
+    Internet((Internet)) --> LB
+    LB --> WAF
+    WAF --> App1
+    WAF --> App2
+    WAF --> App3
+    
+    App1 --> DBPrimary
+    App2 --> DBPrimary
+    App3 --> DBPrimary
+    
+    App1 --> Cache
+    App2 --> Cache
+    App3 --> Cache
+    
+    DBPrimary --> DBReplica
+    
+    Admin[Admin] --> Bastion
+    Bastion --> App1
+    Bastion --> App2
+    
+    style LB fill:#e3f2fd,stroke:#1565c0
+    style WAF fill:#ffebee,stroke:#c62828
+    style DBPrimary fill:#e8f5e9,stroke:#2e7d32
+```
+
+## Usage
+Define your network topology with subnets, security zones, and connectivity.

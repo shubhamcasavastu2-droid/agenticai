@@ -67,3 +67,13 @@
   - test: tests/__pycache__/__init__.cpython-310.pyc, tests/__pycache__/test_tools.cpython-310-pytest-9.1.1.pyc
   - chore: src/__pycache__/__init__.cpython-310.pyc, src/__pycache__/__init__.cpython-314.pyc, src/__pycache__/agent.cpython-310.pyc, src/__pycache__/agent.cpython-314.pyc, src/__pycache__/agents.cpython-310.pyc ... (+31 more)
 
+## [92e8e591] - 2026-11-06
+- **Type**: feat
+- **Author**: jaibharat27
+- **Description**: Add logging system with logs/log.log output: src/logger.py with rotating file handler, logs commands/permissions/tool calls/reasoning/errors
+- **Files** (43):
+  - feat: src/cli.py, src/logger.py
+  - docs: .agents/agents/dev-agent.md, CHANGELOG.md
+  - test: tests/__pycache__/__init__.cpython-310.pyc, tests/__pycache__/test_tools.cpython-310-pytest-9.1.1.pyc
+  - chore: logs/log.log, src/__pycache__/__init__.cpython-310.pyc, src/__pycache__/__init__.cpython-314.pyc, src/__pycache__/agent.cpython-310.pyc, src/__pycache__/agent.cpython-314.pyc ... (+32 more)
+

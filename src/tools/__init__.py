@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from .ask_tool import create_ask_user_tool
 from .bash_tool import create_bash_tool
 from .edit_file import EditFileError, create_edit_file_tool
 from .glob_tool import create_glob_tool
 from .grep_tool import create_grep_tool
+from .plan_tool import create_plan_tool
 from .read_file import create_read_file_tool
 from .registry import ToolRegistry, create_tool_schema
 from .write_file import create_write_file_tool
@@ -18,4 +20,6 @@ __all__ = [
     "create_glob_tool",
     "create_grep_tool",
     "create_bash_tool",
+    "create_ask_user_tool",
+    "create_plan_tool",
 ]

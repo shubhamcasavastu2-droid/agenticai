@@ -1,0 +1,21 @@
+# Technical Fundamentals - Component Diagram Template
+
+```mermaid
+graph TB
+    subgraph "System Boundary"
+        A[Component A] --> B[Component B]
+        B --> C[Component C]
+        C --> D[Component D]
+    end
+    
+    E[External System] --> A
+    D --> F[Database]
+    
+    style A fill:#e1f5fe
+    style B fill:#e1f5fe
+    style C fill:#e1f5fe
+    style D fill:#e1f5fe
+```
+
+## Usage
+Replace component names and connections based on your system architecture.

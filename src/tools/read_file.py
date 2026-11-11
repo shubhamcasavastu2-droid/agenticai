@@ -38,7 +38,10 @@ class ReadFileTool(Tool):
             with open(validated_path, encoding="utf-8") as f:
                 lines = f.readlines()
         except FileNotFoundError:
-            raise FileNotFoundError(f"File not found: {path}")
+            return (
+                f"File not found: {path}. Do not retry this path. Use the glob tool to find "
+                "the correct file path, then call read_file again with that path."
+            )
         except PermissionError:
             raise PermissionError(f"Permission denied: {path}")
 

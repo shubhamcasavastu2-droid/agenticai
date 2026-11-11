@@ -66,6 +66,10 @@ def log_error(message: str) -> None:
     logger.error(message)
 
 
+def log_exception(error: BaseException) -> None:
+    logger.exception("Unhandled exception: %s: %r", type(error).__name__, error)
+
+
 def log_debug(message: str) -> None:
     logger.debug(message)
 

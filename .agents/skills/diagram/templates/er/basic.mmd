@@ -1,0 +1,67 @@
+# ER Diagram - Basic Template
+
+```mermaid
+erDiagram
+    USER ||--o{ ORDER : places
+    USER ||--o{ ADDRESS : has
+    ORDER ||--|{ ORDER_ITEM : contains
+    PRODUCT ||--o{ ORDER_ITEM : "in"
+    CATEGORY ||--o{ PRODUCT : categorizes
+    SUPPLIER ||--o{ PRODUCT : supplies
+    
+    USER {
+        string id PK
+        string email UK
+        string name
+        datetime created_at
+    }
+    
+    ORDER {
+        string id PK
+        string user_id FK
+        enum status
+        decimal total
+        datetime created_at
+    }
+    
+    ORDER_ITEM {
+        string id PK
+        string order_id FK
+        string product_id FK
+        int quantity
+        decimal price
+    }
+    
+    PRODUCT {
+        string id PK
+        string category_id FK
+        string supplier_id FK
+        string name
+        decimal price
+        int stock
+    }
+    
+    CATEGORY {
+        string id PK
+        string name
+        string parent_id FK
+    }
+    
+    SUPPLIER {
+        string id PK
+        string name
+        string contact_email
+    }
+    
+    ADDRESS {
+        string id PK
+        string user_id FK
+        string street
+        string city
+        string country
+        boolean is_default
+    }
+```
+
+## Usage
+Define your entities, attributes, and relationships for database design.

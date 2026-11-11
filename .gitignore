@@ -1,0 +1,12 @@
+node_modules/
+__pycache__/
+*.pyc
+*.egg-info/
+.env
+*.log
+dist/
+build/
+package-lock.json
+package.json
+test_diagram.mmd
+overview.md

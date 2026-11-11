@@ -30,18 +30,30 @@ class Provider(ABC):
         pass
 
 
+class ProviderTimeoutError(TimeoutError):
+    """Raised when the model server doesn't respond within the configured timeout."""
+
+
+class ProviderAuthenticationError(PermissionError):
+    """Raised when the model provider rejects the configured API key."""
+
+
 class OpenAICompatibleProvider(Provider):
     def __init__(
         self,
         base_url: str,
         api_key: str,
         model: str,
-        timeout: float = 60.0,
+        timeout: float = 300.0,
+        max_completion_tokens: int = 8192,
     ):
+        if max_completion_tokens < 1:
+            raise ValueError("max_completion_tokens must be at least 1")
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        self.max_completion_tokens = max_completion_tokens
         self._client = httpx.AsyncClient(timeout=timeout)
 
     async def complete(
@@ -57,11 +69,28 @@ class OpenAICompatibleProvider(Provider):
             "Content-Type": "application/json",
         }
 
-        response = await self._client.post(
-            f"{self.base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-        )
+        try:
+            response = await self._client.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+            )
+        except httpx.TimeoutException as error:
+            raise ProviderTimeoutError(
+                f"Model request timed out after {self.timeout:g} seconds. "
+                "Check that the model server is running and responsive, or increase "
+                "AGENTIC_REQUEST_TIMEOUT_SECONDS."
+            ) from error
+        if response.status_code == 401:
+            raise ProviderAuthenticationError(
+                "The model provider rejected AGENTIC_API_KEY (HTTP 401). "
+                "Create or rotate the API key in the provider console, update the local "
+                "environment, and restart the CLI. Do not paste the key into chat or source files."
+            )
+        if response.status_code >= 429:
+            raise RuntimeError(
+                f"Model provider returned HTTP {response.status_code}: {response.text}"
+            )
         response.raise_for_status()
         data = response.json()
 
@@ -89,8 +118,9 @@ class OpenAICompatibleProvider(Provider):
             "tools": tool_schemas if tool_schemas else None,
             "tool_choice": "auto" if tool_schemas else None,
             "stream": False,
-            "max_tokens": 32768,
-            "num_ctx": 32768,
+            "max_tokens": self.max_completion_tokens,
+            "temperature": 0.5,
+            "top_p": 1,
         }
 
     def _convert_message(self, msg: Message) -> dict[str, Any]:

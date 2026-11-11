@@ -1,0 +1,41 @@
+# API Layer Integration - Endpoint Map Template
+
+```mermaid
+graph TB
+    subgraph "REST API"
+        GET_U[GET /users]
+        POST_U[POST /users]
+        GET_U_ID[GET /users/{id}]
+        PUT_U_ID[PUT /users/{id}]
+        DEL_U_ID[DELETE /users/{id}]
+    end
+    
+    subgraph "GraphQL"
+        GQL_Query[Query: users, user]
+        GQL_Mutation[Mutation: createUser, updateUser]
+        GQL_Subscription[Subscription: userUpdated]
+    end
+    
+    subgraph "gRPC"
+        GRPC_UserSvc[UserService]
+        GRPC_GetUser[GetUser]
+        GRPC_ListUsers[ListUsers]
+        GRPC_CreateUser[CreateUser]
+        GRPC_UpdateUser[UpdateUser]
+    end
+    
+    subgraph "Async / Events"
+        Kafka_UserCreated[user.created]
+        Kafka_UserUpdated[user.updated]
+        Kafka_UserDeleted[user.deleted]
+    end
+    
+    style GET_U fill:#e3f2fd
+    style POST_U fill:#e3f2fd
+    style GQL_Query fill:#f3e5f5
+    style GRPC_UserSvc fill:#e8f5e9
+    style Kafka_UserCreated fill:#fff3e0
+```
+
+## Usage
+Map all your API endpoints across different protocols and styles.

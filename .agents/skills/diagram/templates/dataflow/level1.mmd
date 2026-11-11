@@ -1,0 +1,34 @@
+# Data Flow - Level 1 DFD Template
+
+```mermaid
+graph TB
+    subgraph "External Entities"
+        User[User]
+        ExtAPI[External API]
+    end
+    
+    subgraph "System Processes"
+        P1[Process 1: Authentication]
+        P2[Process 2: Data Processing]
+        P3[Process 3: Notification]
+    end
+    
+    subgraph "Data Stores"
+        D1[(User DB)]
+        D2[(Cache)]
+        D3[(Log Store)]
+    end
+    
+    User -->|Credentials| P1
+    P1 -->|Validated User| P2
+    ExtAPI -->|Data Feed| P2
+    P2 -->|Processed Data| D1
+    P2 -->|Cache Update| D2
+    P2 -->|Events| P3
+    P3 -->|Notifications| User
+    P1 -->|Auth Logs| D3
+    P2 -->|Audit Trail| D3
+```
+
+## Usage
+Decompose your context diagram into major processes and data stores.

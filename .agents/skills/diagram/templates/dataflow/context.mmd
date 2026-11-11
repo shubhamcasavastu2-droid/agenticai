@@ -1,0 +1,27 @@
+# Data Flow - Context Diagram (Level 0) Template
+
+```mermaid
+graph LR
+    subgraph "External Entities"
+        User[User]
+        ExtSys[External System]
+        Sensor[IoT Sensor]
+    end
+    
+    subgraph "System Boundary"
+        Process[Core Process]
+    end
+    
+    User -->|Input Data| Process
+    ExtSys -->|API Calls| Process
+    Sensor -->|Telemetry| Process
+    
+    Process -->|Response| User
+    Process -->|Results| ExtSys
+    Process -->|Commands| Sensor
+    
+    style Process fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+```
+
+## Usage
+Define your system boundary, external entities, and data flows.

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRC Cards - AI Agent CLI Architecture</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #fafafa;
+        }
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1 {
+            color: #1a1a2e;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 10px;
+        }
+        .mermaid {
+            text-align: center;
+            overflow: auto;
+        }
+        .diagram-info {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #555;
+        }
+        .diagram-info h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .diagram-info ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .diagram-info li {
+            margin: 5px 0;
+        }
+        footer {
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+            color: #888;
+            font-size: 12px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CRC Cards - Class-Responsibility-Collaborator Cards</h1>
+        
+        <div class="diagram-info">
+            <h2>Overview</h2>
+            <p>Class-Responsibility-Collaborator (CRC) cards for each major component in the AI Agent CLI codebase.</p>
+            <ul>
+                <li>Each card shows a class with its responsibilities and collaborators</li>
+                <li>Organized by layer with color coding</li>
+                <li>Useful for understanding class design and for design reviews</li>
+            </ul>
+        </div>
+
+        <div class="mermaid">
+%%{init: {'theme': 'default', 'flowchart': {'htmlLabels': true, 'curve': 'basis'}}}%%
+graph TB
+    subgraph "Core Agent CRC Cards"
+        direction TB
+        
+        %% AgentLoop CRC
+        AgentLoop_CRC[["AgentLoop<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Execute agent reasoning loop<br/>• Manage conversation state (AgentState)<br/>• Call provider for completions<br/>• Execute tool calls with permission checks<br/>• Handle token limits & continuations<br/>• Detect & prevent repeated tool calls<br/>• Log context usage<br/>• Invoke callbacks (reasoning, tool, permission, clarification)<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Provider (interface)<br/>• ToolRegistry<br/>• PermissionGate<br/>• AgentState<br/>• Callbacks (permission, reasoning, tool, clarification)<br/>• Logger"]]
+        
+        %% AgentState CRC
+        AgentState_CRC[["AgentState<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Hold conversation messages (list[Message])<br/>• Track step count<br/>• Track last tool calls (for loop detection)<br/>• Track model output limit reached flag<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Message<br/>• Block (TextBlock, ToolCall, ToolResult, ReasoningBlock)"]]
+        
+        %% CompletionResolver CRC
+        CompletionResolver_CRC[["CompletionResolver<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Run completion review loop (max attempts)<br/>• Build review input from conversation trace<br/>• Parse reviewer JSON response<br/>• Manage retry attempts<br/>• Inject review feedback into agent loop<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Provider<br/>• AgentLoop<br/>• Message, Block, ToolCall, ToolResult, ReasoningBlock<br/>• Logger"]]
+    end
+    
+    subgraph "Provider Layer CRC Cards"
+        direction TB
+        
+        Provider_CRC[["Provider (Interface)<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Define abstract completion interface<br/>• complete(system, messages, tools) → ModelResponse<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Message<br/>• ToolSchema<br/>• ModelResponse"]]
+        
+        OpenAICompatibleProvider_CRC[["OpenAICompatibleProvider<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• HTTP communication with OpenAI-compatible API<br/>• Build request payload (messages, tools, params)<br/>• Convert Message/ToolSchema to API format<br/>• Parse API response to ModelResponse<br/>• Handle timeouts & authentication errors<br/>• Manage httpx AsyncClient lifecycle<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Provider (implements)<br/>• Message, ToolSchema, ModelResponse, Block, ToolCall, ToolResult, ReasoningBlock, StopReason<br/>• httpx.AsyncClient<br/>• ProviderTimeoutError, ProviderAuthenticationError"]]
+    end
+    
+    subgraph "Types Layer CRC Cards"
+        direction TB
+        
+        Types_CRC[["Types (Data Structures)<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Role enum: USER, ASSISTANT, TOOL<br/>• StopReason enum: END_TURN, MAX_TOKENS, TOOL_USE, ERROR<br/>• Block hierarchy: TextBlock, ToolCall, ToolResult, ReasoningBlock<br/>• Message: role + content (list[Block])<br/>• ToolSchema: name, description, parameters (JSON Schema)<br/>• ModelResponse: blocks, stop_reason, usage<br/>• Tool interface: name, description, schema, execute()<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Used by all layers"]]
+    end
+    
+    subgraph "Tools Layer CRC Cards"
+        direction TB
+        
+        ToolRegistry_CRC[["ToolRegistry<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Register tools by name<br/>• Retrieve tools by name<br/>• List all tools<br/>• Provide tool schemas for provider<br/>• Execute tools by name with kwargs<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Tool (interface)<br/>• ToolSchema"]]
+        
+        ReadFileTool_CRC[["ReadFileTool<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Read files with optional offset/limit<br/>• Validate path within project root<br/>• Truncate output to max size<br/>• Format output with line numbers<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Tool (implements)<br/>• PathValidation (validate_path)<br/>• Truncation (make_truncate_output)<br/>• pathlib.Path"]]
+        
+        WriteFileTool_CRC[["WriteFileTool<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Write content to file (creates parent dirs)<br/>• Validate path within project root<br/>• Overwrite existing files<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Tool (implements)<br/>• PathValidation (validate_path)<br/>• pathlib.Path"]]
+        
+        EditFileTool_CRC[["EditFileTool<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Replace exact string match in file<br/>• Validate match is unique (exactly 1)<br/>• Show context on match failure<br/>• Validate path within project root<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Tool (implements)<br/>• PathValidation (validate_path)<br/>• EditFileError<br/>• pathlib.Path"]]
+        
+        GlobTool_CRC[["GlobTool<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Find files matching glob pattern<br/>• Return sorted relative paths<br/>• Truncate output to max size<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Tool (implements)<br/>• Truncation (make_truncate_output)<br/>• glob module<br/>• pathlib.Path"]]
+        
+        GrepTool_CRC[["GrepTool<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Search regex pattern in files<br/>• Return matches with file:line:content<br/>• Support include file pattern filter<br/>• Validate search path within project root<br/>• Truncate output to max size<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Tool (implements)<br/>• PathValidation (validate_path)<br/>• Truncation (make_truncate_output)<br/>• re module<br/>• pathlib.Path"]]
+        
+        BashTool_CRC[["BashTool<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Execute shell commands with timeout<br/>• Check deny list for dangerous commands<br/>• Validate working directory within project root<br/>• Capture stdout/stderr<br/>• Truncate output to max size<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Tool (implements)<br/>• PathValidation (validate_path)<br/>• Truncation (make_truncate_output)<br/>• DenyList (check_deny_list)<br/>• asyncio.subprocess"]]
+        
+        AskUserTool_CRC[["AskUserTool<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Delegate user interaction to callback<br/>• Support fixed-choice questions<br/>• Validate question not empty<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Tool (implements)<br/>• AskCallback (CLI._ask_user)"]]
+        
+        PlanTool_CRC[["PlanTool<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Delegate plan approval to callback<br/>• Validate plan structure (title, summary, steps)<br/>• Support optional risks<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Tool (implements)<br/>• PlanCallback (CLI._present_plan)"]]
+    end
+    
+    subgraph "Permissions Layer CRC Cards"
+        direction TB
+        
+        PermissionGate_CRC[["PermissionGate<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Check tool permissions (always/auto/prompt)<br/>• Check bash commands against deny list<br/>• Manage always-allow & auto-allow sets<br/>• Reset all permissions<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• DenyList (check_deny_list)"]]
+        
+        PathValidation_CRC[["PathValidation<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Resolve relative paths to absolute<br/>• Validate path is within project root<br/>• Prevent directory traversal attacks<br/>• Use os.path.commonpath for safety<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• pathlib.Path<br/>• os.path<br/>• PathValidationError"]]
+        
+        DenyList_CRC[["DenyList<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Define dangerous command patterns<br/>• Check commands against patterns (case-insensitive)<br/>• Patterns: rm -rf /, git push --force, dd if=, mkfs, etc.<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Used by PermissionGate & BashTool"]]
+        
+        Truncation_CRC[["Truncation<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Truncate output to max size<br/>• Add truncation notice with char counts<br/>• Factory function for custom max sizes<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Used by ReadFileTool, GlobTool, GrepTool, BashTool"]]
+    end
+    
+    subgraph "Config & External CRC Cards"
+        direction TB
+        
+        Config_CRC[["Config<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Load config from .env files (multiple locations)<br/>• Provide sensible defaults<br/>• Validate config values (positive ints, etc.)<br/>• Resolve project_root to absolute path<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• python-dotenv (load_dotenv)<br/>• os.getenv<br/>• pathlib.Path"]]
+        
+        Skill_CRC[["Skill<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Load SKILL.md with YAML frontmatter<br/>• Store: name, description, path, metadata, content<br/>• Format for system prompt inclusion<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• PyYAML (yaml.safe_load)<br/>• pathlib.Path"]]
+        
+        SkillLoader_CRC[["SkillLoader<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Discover skills in directory (SKILL.md in subdirs)<br/>• Load & cache skills by name<br/>• Format all skills for system prompt<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Skill<br/>• PyYAML<br/>• pathlib.Path"]]
+        
+        Agent_CRC[["Agent<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Load agent .md with YAML frontmatter<br/>• Store: name, description, model, system_prompt, tools, permissions, metadata, content<br/>• Format for system prompt inclusion<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• PyYAML<br/>• pathlib.Path"]]
+        
+        AgentLoader_CRC[["AgentLoader<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Discover agents in directory (.md files)<br/>• Load agents.md default config (if exists)<br/>• Cache & retrieve agents by name<br/>• Format all agents for system prompt<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Agent<br/>• PyYAML<br/>• pathlib.Path"]]
+        
+        SystemPrompt_CRC[["SystemPrompt<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Build system prompt from template<br/>• Inject tool descriptions<br/>• Inject skills & agents info<br/>• Load AGENT.md project instructions<br/>• Build input normalizer prompt<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Config (project_root)<br/>• ToolRegistry (for tool descriptions)<br/>• SkillLoader (format_for_prompt)<br/>• AgentLoader (format_for_prompt)<br/>• platform, datetime, os"]]
+        
+        Logger_CRC[["Logger<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Setup rotating file handler (10MB, 5 backups)<br/>• Setup console handler (WARNING+ only)<br/>• Provide typed log functions (info, warning, error, debug)<br/>• Specialized loggers: tool_call, permission, command, reasoning<br/>━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• logging, RotatingFileHandler<br/>• pathlib.Path"]]
+        
+        CLI_CRC[["CLI<br/>━━━━━━━━━━━━━━━<br/>Responsibilities:<br/>• Initialize all components (provider, registry, permissions, loops, loaders)<br/>• Run main event loop (prompt → handle_input)\n• Handle user input & slash commands (/help, /clear, /model, /permission, /skills, /agents, /exit)\n• Manage interactive permissions (prompt user)\n• Display formatted output (Rich panels, tables, markdown)\n• Coordinate agent loops (normalizer + main)\n• Provide callbacks for tools (ask_user, plan)\n━━━━━━━━━━━━━━━<br/>Collaborators:<br/>• Config, OpenAICompatibleProvider, ToolRegistry, PermissionGate\n• AgentLoop (main + normalizer), CompletionResolver\n• SkillLoader, AgentLoader, SystemPrompt, Logger\n• Rich (Console, Panel, Markdown, Table, Prompt)"]]
+    end
+    
+    %% Connections between CRC cards
+    AgentLoop_CRC -.->|uses| Provider_CRC
+    AgentLoop_CRC -.->|uses| ToolRegistry_CRC
+    AgentLoop_CRC -.->|uses| PermissionGate_CRC
+    AgentLoop_CRC -.->|has| AgentState_CRC
+    AgentLoop_CRC -.->|uses| Types_CRC
+    AgentLoop_CRC -.->|uses| Logger_CRC
+    
+    CompletionResolver_CRC -.->|uses| Provider_CRC
+    CompletionResolver_CRC -.->|uses| AgentLoop_CRC
+    CompletionResolver_CRC -.->|uses| Types_CRC
+    CompletionResolver_CRC -.->|uses| Logger_CRC
+    
+    OpenAICompatibleProvider_CRC -.->|implements| Provider_CRC
+    OpenAICompatibleProvider_CRC -.->|uses| Types_CRC
+    
+    ToolRegistry_CRC -.->|manages| Types_CRC
+    
+    ReadFileTool_CRC -.->|implements| Types_CRC
+    ReadFileTool_CRC -.->|uses| PathValidation_CRC
+    ReadFileTool_CRC -.->|uses| Truncation_CRC
+    
+    WriteFileTool_CRC -.->|implements| Types_CRC
+    WriteFileTool_CRC -.->|uses| PathValidation_CRC
+    
+    EditFileTool_CRC -.->|implements| Types_CRC
+    EditFileTool_CRC -.->|uses| PathValidation_CRC
+    
+    GlobTool_CRC -.->|implements| Types_CRC
+    GlobTool_CRC -.->|uses| Truncation_CRC
+    
+    GrepTool_CRC -.->|implements| Types_CRC
+    GrepTool_CRC -.->|uses| PathValidation_CRC
+    GrepTool_CRC -.->|uses| Truncation_CRC
+    
+    BashTool_CRC -.->|implements| Types_CRC
+    BashTool_CRC -.->|uses| PathValidation_CRC
+    BashTool_CRC -.->|uses| Truncation_CRC
+    BashTool_CRC -.->|uses| DenyList_CRC
+    
+    AskUserTool_CRC -.->|implements| Types_CRC
+    PlanTool_CRC -.->|implements| Types_CRC
+    
+    PermissionGate_CRC -.->|uses| DenyList_CRC
+    
+    SkillLoader_CRC -.->|loads| Skill_CRC
+    AgentLoader_CRC -.->|loads| Agent_CRC
+    
+    SystemPrompt_CRC -.->|uses| Config_CRC
+    SystemPrompt_CRC -.->|uses| ToolRegistry_CRC
+    SystemPrompt_CRC -.->|uses| SkillLoader_CRC
+    SystemPrompt_CRC -.->|uses| AgentLoader_CRC
+    
+    CLI_CRC -.->|uses| AgentLoop_CRC
+    CLI_CRC -.->|uses| CompletionResolver_CRC
+    CLI_CRC -.->|uses| ToolRegistry_CRC
+    CLI_CRC -.->|uses| PermissionGate_CRC
+    CLI_CRC -.->|uses| SkillLoader_CRC
+    CLI_CRC -.->|uses| AgentLoader_CRC
+    CLI_CRC -.->|uses| SystemPrompt_CRC
+    CLI_CRC -.->|uses| Config_CRC
+    CLI_CRC -.->|uses| OpenAICompatibleProvider_CRC
+    CLI_CRC -.->|uses| Logger_CRC
+    
+    %% Styles
+    classDef crcCard fill:#f5f5f5,stroke:#333,stroke-width:2px
+    classDef coreCard fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef providerCard fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef typesCard fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef toolsCard fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    classDef permCard fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    classDef configCard fill:#ede7f6,stroke:#311b92,stroke-width:2px
+    
+    class AgentLoop_CRC,AgentState_CRC,CompletionResolver_CRC coreCard
+    class Provider_CRC,OpenAICompatibleProvider_CRC providerCard
+    class Types_CRC typesCard
+    class ToolRegistry_CRC,ReadFileTool_CRC,WriteFileTool_CRC,EditFileTool_CRC,GlobTool_CRC,GrepTool_CRC,BashTool_CRC,AskUserTool_CRC,PlanTool_CRC toolsCard
+    class PermissionGate_CRC,PathValidation_CRC,DenyList_CRC,Truncation_CRC permCard
+    class Config_CRC,Skill_CRC,SkillLoader_CRC,Agent_CRC,AgentLoader_CRC,SystemPrompt_CRC,Logger_CRC,CLI_CRC configCard
+</div>
+
+        <footer>
+            Generated from <code>docs/architecture/crc_cards.mermaid</code> | AI Agent CLI Architecture Documentation
+        </footer>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'default',
+            flowchart: {
+                htmlLabels: true,
+                curve: 'basis'
+            },
+            securityLevel: 'loose',
+            maxTextSize: 90000
+        });
+    </script>
+</body>
+</html>

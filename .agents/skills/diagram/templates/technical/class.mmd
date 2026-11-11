@@ -1,0 +1,30 @@
+# Technical Fundamentals - Class Diagram Template
+
+```mermaid
+classDiagram
+    class BaseClass {
+        +id: string
+        +createdAt: DateTime
+        +update()
+        +delete()
+    }
+    
+    class DerivedClass {
+        +name: string
+        +value: number
+        +calculate()
+    }
+    
+    class Interface {
+        <<interface>>
+        +method1()
+        +method2()
+    }
+    
+    BaseClass <|-- DerivedClass
+    Interface <|.. DerivedClass
+    BaseClass *-- "0..*" Component : contains
+```
+
+## Usage
+Define your classes, attributes, methods, and relationships.

@@ -1,0 +1,44 @@
+# API Layer Integration - API Gateway Template
+
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        Web[Web App]
+        Mobile[Mobile App]
+        ThirdParty[3rd Party]
+    end
+    
+    subgraph "API Gateway"
+        Gateway[API Gateway]
+        Auth[Auth Service]
+        RateLimit[Rate Limiter]
+        Router[Router]
+    end
+    
+    subgraph "Backend Services"
+        UserSvc[User Service]
+        OrderSvc[Order Service]
+        PaymentSvc[Payment Service]
+        InventorySvc[Inventory Service]
+    end
+    
+    Web --> Gateway
+    Mobile --> Gateway
+    ThirdParty --> Gateway
+    
+    Gateway --> Auth
+    Gateway --> RateLimit
+    Gateway --> Router
+    
+    Router --> UserSvc
+    Router --> OrderSvc
+    Router --> PaymentSvc
+    Router --> InventorySvc
+    
+    style Gateway fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style Auth fill:#ffebee,stroke:#c62828
+    style RateLimit fill:#fff3e0,stroke:#ef6c00
+```
+
+## Usage
+Configure your API gateway with routes, authentication, and rate limiting.

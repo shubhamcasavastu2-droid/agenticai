@@ -1,0 +1,25 @@
+# Technical Fundamentals - Sequence Diagram Template
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API Gateway
+    participant Service A
+    participant Service B
+    participant Database
+    
+    Client->>API Gateway: Request
+    API Gateway->>Service A: Forward Request
+    Service A->>Service B: Internal Call
+    Service B->>Database: Query
+    Database-->>Service B: Result
+    Service B-->>Service A: Response
+    Service A-->>API Gateway: Response
+    API Gateway-->>Client: Response
+    
+    Note over Service A,Service B: Async processing
+    Note right of Database: Read replica
+```
+
+## Usage
+Define participants and message flows for your interaction scenario.

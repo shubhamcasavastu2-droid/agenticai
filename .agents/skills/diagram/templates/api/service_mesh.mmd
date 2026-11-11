@@ -1,0 +1,52 @@
+# API Layer Integration - Service Mesh Template
+
+```mermaid
+graph TB
+    subgraph "Data Plane"
+        subgraph "Service A Pod"
+            AppA[Application A]
+            SidecarA[Envoy Sidecar]
+        end
+        
+        subgraph "Service B Pod"
+            AppB[Application B]
+            SidecarB[Envoy Sidecar]
+        end
+        
+        subgraph "Service C Pod"
+            AppC[Application C]
+            SidecarC[Envoy Sidecar]
+        end
+    end
+    
+    subgraph "Control Plane"
+        Pilot[Pilot / Istiod]
+        Citadel[Citadel / CA]
+        Galley[Galley / Config]
+    end
+    
+    AppA --> SidecarA
+    AppB --> SidecarB
+    AppC --> SidecarC
+    
+    SidecarA <--> SidecarB
+    SidecarB <--> SidecarC
+    SidecarA <--> SidecarC
+    
+    Pilot --> SidecarA
+    Pilot --> SidecarB
+    Pilot --> SidecarC
+    
+    Citadel --> SidecarA
+    Citadel --> SidecarB
+    Citadel --> SidecarC
+    
+    Galley --> Pilot
+    
+    style Pilot fill:#e8f5e9,stroke:#2e7d32
+    style Citadel fill:#fff3e0,stroke:#ef6c00
+    style Galley fill:#e3f2fd,stroke:#1565c0
+```
+
+## Usage
+Visualize your service mesh architecture with sidecars and control plane.

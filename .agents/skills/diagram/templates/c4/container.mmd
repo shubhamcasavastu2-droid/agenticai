@@ -1,0 +1,54 @@
+# C4 Model - Container Diagram Template
+
+```mermaid
+graph TB
+    subgraph "E-Commerce Platform"
+        WebApp[Web Application\nReact/TypeScript]
+        MobileApp[Mobile App\nReact Native]
+        APIGateway[API Gateway\nKong]
+        
+        subgraph "Services"
+            UserSvc[User Service\nGo]
+            OrderSvc[Order Service\nJava]
+            PaymentSvc[Payment Service\nNode.js]
+            InventorySvc[Inventory Service\nPython]
+        end
+        
+        subgraph "Data Stores"
+            UserDB[(User DB\nPostgreSQL)]
+            OrderDB[(Order DB\nPostgreSQL)]
+            Cache[(Cache\nRedis)]
+            MessageQ[Message Queue\nKafka]
+        end
+    end
+    
+    Customer[Customer] --> WebApp
+    Customer --> MobileApp
+    Admin[Admin] --> WebApp
+    
+    WebApp --> APIGateway
+    MobileApp --> APIGateway
+    
+    APIGateway --> UserSvc
+    APIGateway --> OrderSvc
+    APIGateway --> PaymentSvc
+    APIGateway --> InventorySvc
+    
+    UserSvc --> UserDB
+    UserSvc --> Cache
+    OrderSvc --> OrderDB
+    OrderSvc --> MessageQ
+    PaymentSvc --> MessageQ
+    InventorySvc --> Cache
+    
+    style WebApp fill:#1f77b4,color:#fff
+    style MobileApp fill:#1f77b4,color:#fff
+    style APIGateway fill:#ff7f0e,color:#fff
+    style UserSvc fill:#2ca02c,color:#fff
+    style OrderSvc fill:#2ca02c,color:#fff
+    style PaymentSvc fill:#2ca02c,color:#fff
+    style InventorySvc fill:#2ca02c,color:#fff
+```
+
+## Usage
+Show containers (applications, services, databases) and their interactions.

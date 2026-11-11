@@ -5,7 +5,7 @@ A minimal agentic coding tool CLI built from scratch. Give it a coding task and 
 ## Features
 
 - **Provider-agnostic**: Works with any OpenAI-compatible API (Ollama, OpenAI, OpenRouter, etc.)
-- **6 built-in tools**: `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `bash`
+- **8 built-in tools**: `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `bash`, `ask_user`, `plan`
 - **Permission gate**: Read-only tools auto-run; write tools ask for confirmation
 - **Path safety**: Blocks paths outside project root, deny list for dangerous commands
 - **Agent loop**: Automatic tool calling with max steps and loop detection
@@ -30,16 +30,34 @@ cp .env.example .env
 ```
 
 Required settings:
-- `AGENTIC_BASE_URL` - OpenAI-compatible API endpoint (e.g., `http://localhost:11434/v1` for Ollama)
-- `AGENTIC_API_KEY` - API key (use `ollama` for local Ollama)
-- `AGENTIC_MODEL` - Model name (e.g., `llama3.1`, `gpt-4o-mini`)
+- `AGENTIC_BASE_URL` - OpenAI-compatible API endpoint
+- `AGENTIC_API_KEY` - Provider API key; set it in your shell or secret manager, not in tracked files
+- `AGENTIC_MODEL` - Model name
+
+For NVIDIA NIM, set the API key in your terminal before starting the CLI. Keep the key out of chat and source control:
+
+```bash
+export AGENTIC_API_KEY="your-new-nvidia-api-key"
+uv run python -m src.cli
+```
 
 Optional:
 - `AGENTIC_PROJECT_ROOT` - Project directory (default: current directory)
+- `AGENTIC_REQUEST_TIMEOUT_SECONDS` - Model request timeout in seconds (default: 300)
+- `AGENTIC_MAX_COMPLETION_TOKENS` - Maximum generated tokens per response (default: 8192)
+- `AGENTIC_CONTEXT_WINDOW_TOKENS` - Context budget used to compare reported prompt/completion tokens (default: 32768)
 - `AGENTIC_MAX_OUTPUT_SIZE` - Tool output truncation limit (default: 8000)
 - `AGENTIC_MAX_STEPS` - Max agent steps per task (default: 50)
+- `AGENTIC_MAX_COMPLETION_ATTEMPTS` - Completion-review and repair attempts (default: 3)
 
 ### Provider Examples
+
+**NVIDIA NIM**:
+```bash
+AGENTIC_BASE_URL=https://integrate.api.nvidia.com/v1
+AGENTIC_API_KEY=your-new-nvidia-api-key
+AGENTIC_MODEL=z-ai/glm-5.3-flash
+```
 
 **Ollama (local)**:
 ```bash
@@ -100,6 +118,8 @@ The agent will:
 - **Auto-allowed**: `read_file`, `glob`, `grep`
 - **Asks permission**: `write_file`, `edit_file`, `bash`
 - Type `y` = allow once, `a` = always allow this session, `n` = deny
+
+The agent can use `ask_user` to ask for a free-text answer or a choice from supplied options. Its `plan` tool presents a proposed plan and asks you to approve, request revisions, or reject it. These tools require an interactive terminal.
 
 ### Project Instructions (AGENT.md)
 

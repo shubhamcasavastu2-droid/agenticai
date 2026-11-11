@@ -1,0 +1,52 @@
+# Deployment - Kubernetes Architecture Template
+
+```mermaid
+graph TB
+    subgraph "Control Plane"
+        APIServer[API Server]
+        Scheduler[Scheduler]
+        ControllerMgr[Controller Manager]
+        Etcd[(etcd)]
+    end
+    
+    subgraph "Worker Nodes"
+        subgraph "Node 1"
+            Kubelet1[Kubelet]
+            KProxy1[kube-proxy]
+            Runtime1[Container Runtime]
+            Pod1[Pod: App]
+            Pod2[Pod: Sidecar]
+        end
+        
+        subgraph "Node 2"
+            Kubelet2[Kubelet]
+            KProxy2[kube-proxy]
+            Runtime2[Container Runtime]
+            Pod3[Pod: App]
+            Pod4[Pod: DB]
+        end
+    end
+    
+    APIServer --> Scheduler
+    APIServer --> ControllerMgr
+    APIServer --> Etcd
+    
+    APIServer --> Kubelet1
+    APIServer --> Kubelet2
+    
+    Kubelet1 --> Runtime1
+    Kubelet2 --> Runtime2
+    
+    Runtime1 --> Pod1
+    Runtime1 --> Pod2
+    Runtime2 --> Pod3
+    Runtime2 --> Pod4
+    
+    style APIServer fill:#e3f2fd,stroke:#1565c0
+    style Etcd fill:#f3e5f5,stroke:#7b1fa2
+    style Pod1 fill:#e8f5e9,stroke:#2e7d32
+    style Pod4 fill:#fff3e0,stroke:#ef6c00
+```
+
+## Usage
+Visualize your Kubernetes cluster with control plane and worker nodes.

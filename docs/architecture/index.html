@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Agent CLI - Architecture Diagrams (Diagram Design)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--color-ink);
+      color: var(--color-paper);
+      padding: 4rem 2rem;
+      text-align: center;
+    }
+
+    header .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    header h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(2rem, 3vw + 1rem, 3rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin: 0 0 1rem;
+    }
+
+    header p {
+      font-size: 1.25rem;
+      color: var(--color-muted);
+      max-width: 60ch;
+      margin: 0 auto;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 4rem 2rem;
+    }
+
+    .diagram-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-top: 3rem;
+    }
+
+    .diagram-card {
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid rgba(45,49,66,0.10);
+      padding: 2rem;
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    }
+
+    .diagram-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 32px rgba(45,49,66,0.12);
+      border-color: var(--color-accent);
+    }
+
+    .diagram-card .category {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-accent);
+      margin-bottom: 0.5rem;
+    }
+
+    .diagram-card h2 {
+      font-family: var(--font-serif);
+      font-size: 1.25rem;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      color: var(--color-ink);
+      margin: 0 0 0.75rem;
+    }
+
+    .diagram-card p {
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: var(--color-muted);
+      margin: 0 0 1.5rem;
+    }
+
+    .diagram-card .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 1.5rem;
+    }
+
+    .diagram-card .tag {
+      background: rgba(45,49,66,0.06);
+      color: var(--color-muted);
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 500;
+      font-family: var(--font-mono);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .diagram-card .tag.accent {
+      background: rgba(191,69,32,0.12);
+      color: var(--color-accent);
+    }
+
+    .diagram-card a {
+      display: inline-block;
+      background: var(--color-ink);
+      color: var(--color-paper);
+      padding: 10px 20px;
+      border-radius: 6px;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.9rem;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .diagram-card a:hover {
+      background: var(--color-accent);
+      transform: translateY(-1px);
+    }
+
+    .diagram-card .file-info {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      font-size: 0.8rem;
+      color: var(--color-muted);
+      font-family: var(--font-mono);
+    }
+
+    .diagram-card .file-info code {
+      background: rgba(45,49,66,0.06);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .section {
+      margin-top: 4rem;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: baseline;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid rgba(45,49,66,0.10);
+    }
+
+    .section-header .eyebrow {
+      color: var(--color-accent);
+    }
+
+    .section-header h2 {
+      font-family: var(--font-serif);
+      font-size: 1.5rem;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+    }
+
+    footer {
+      text-align: center;
+      padding: 3rem 2rem;
+      color: var(--color-muted);
+      font-size: 0.9rem;
+      border-top: 1px solid rgba(45,49,66,0.10);
+      margin-top: 4rem;
+    }
+
+    footer code {
+      font-family: var(--font-mono);
+      background: rgba(45,49,66,0.06);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: center;
+      gap: 3rem;
+      margin: 2rem 0;
+      flex-wrap: wrap;
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-number {
+      display: block;
+      font-family: var(--font-serif);
+      font-size: 2.5rem;
+      font-weight: 400;
+      color: var(--color-ink);
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-top: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="eyebrow">Diagram Design · Architecture</p>
+    <h1>AI Agent CLI Architecture</h1>
+    <p>Comprehensive architectural documentation using the Diagram Design editorial design system</p>
+  </header>
+
+  <div class="container">
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-number">7</span>
+        <span class="stat-label">Diagrams</span>
+      </div>
+      <div class="stat">
+        <span class="stat-number">45+</span>
+        <span class="stat-label">Classes</span>
+      </div>
+      <div class="stat">
+        <span class="stat-number">3</span>
+        <span class="stat-label">Sequence Flows</span>
+      </div>
+      <div class="stat">
+        <span class="stat-number">100%</span>
+        <span class="stat-label">Design System</span>
+      </div>
+    </div>
+
+    <!-- Class Diagrams Section -->
+    <section class="section">
+      <div class="section-header">
+        <p class="eyebrow">UML Class Diagrams</p>
+        <h2>Static Structure</h2>
+      </div>
+
+      <div class="diagram-grid">
+        <div class="diagram-card">
+          <p class="category">UML Class</p>
+          <h2>Core Types & Message Model</h2>
+          <p>Enumerations (Role, StopReason), Block interface with four implementations (TextBlock, ToolCall, ToolResult, ReasoningBlock), Message with factory methods, ToolSchema, ModelResponse, and Tool interface.</p>
+          <div class="tags">
+            <span class="tag">Enumerations</span>
+            <span class="tag">Interface</span>
+            <span class="tag">Realization</span>
+            <span class="tag accent">Focal: Block</span>
+          </div>
+          <a href="diagram-design/class-core-types.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>class-core-types.html</code></div>
+        </div>
+
+        <div class="diagram-card">
+          <p class="category">UML Class</p>
+          <h2>Agent Layer: State & Loop</h2>
+          <p>AgentState containing Messages, and AgentLoop depending on Provider, ToolRegistry, PermissionGate with callbacks, owning AgentState via composition.</p>
+          <div class="tags">
+            <span class="tag">Composition</span>
+            <span class="tag">Dependency</span>
+            <span class="tag">Callbacks</span>
+            <span class="tag accent">Focal: AgentLoop</span>
+          </div>
+          <a href="diagram-design/class-agent-layer.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>class-agent-layer.html</code></div>
+        </div>
+
+        <div class="diagram-card">
+          <p class="category">UML Class</p>
+          <h2>Provider Layer</h2>
+          <p>Provider interface realized by OpenAICompatibleProvider (full implementation) with AnthropicProvider and GeminiProvider as stubs. Custom exceptions for timeout and authentication errors.</p>
+          <div class="tags">
+            <span class="tag">Realization</span>
+            <span class="tag">Stubs</span>
+            <span class="tag">Exceptions</span>
+            <span class="tag accent">Focal: Provider</span>
+          </div>
+          <a href="diagram-design/class-provider-layer.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>class-provider-layer.html</code></div>
+        </div>
+
+        <div class="diagram-card">
+          <p class="category">UML Class</p>
+          <h2>Tools Layer</h2>
+          <p>Tool interface realized by 7 concrete tools (ReadFileTool, WriteFileTool, EditFileTool, GlobTool, GrepTool, BashTool, AskUserTool, PlanTool), managed by ToolRegistry with external validation functions.</p>
+          <div class="tags">
+            <span class="tag">7 Tools</span>
+            <span class="tag">Registry</span>
+            <span class="tag">External Fns</span>
+            <span class="tag accent">Focal: Tool</span>
+          </div>
+          <a href="diagram-design/class-tools-layer.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>class-tools-layer.html</code></div>
+        </div>
+
+        <div class="diagram-card">
+          <p class="category">Tree</p>
+          <h2>Class Hierarchy Tree</h2>
+          <p>Hierarchical view of all inheritance and realization relationships: Block→4 implementations, Provider→3 implementations, Tool→7 implementations, plus enumerations Role and StopReason.</p>
+          <div class="tags">
+            <span class="tag">Inheritance</span>
+            <span class="tag">Realization</span>
+            <span class="tag">Enumerations</span>
+            <span class="tag accent">Focal: Interfaces</span>
+          </div>
+          <a href="diagram-design/hierarchy-class-tree.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>hierarchy-class-tree.html</code></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section class="section">
+      <div class="section-header">
+        <p class="eyebrow">Architecture Diagram</p>
+        <h2>Layered System Overview</h2>
+      </div>
+
+      <div class="diagram-grid">
+        <div class="diagram-card" style="grid-column: 1 / -1;">
+          <p class="category">Architecture</p>
+          <h2>AI Agent CLI · Layered Architecture</h2>
+          <p>Six-layer architecture: CLI (entry point), Agent Layer (AgentLoop orchestrator, AgentState), Provider Layer (Provider interface + implementations), Tools Layer (ToolRegistry + 7 tools), Core Types (messages, blocks, schemas), External Dependencies (httpx, stdlib, config). Shows primary flow, dependencies, and trust boundaries.</p>
+          <div class="tags">
+            <span class="tag">6 Layers</span>
+            <span class="tag">Trust Boundaries</span>
+            <span class="tag">Primary Flow</span>
+            <span class="tag accent">Focal: AgentLoop</span>
+          </div>
+          <a href="diagram-design/architecture-layers.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>architecture-layers.html</code></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sequence Diagrams Section -->
+    <section class="section">
+      <div class="section-header">
+        <p class="eyebrow">Sequence Diagrams</p>
+        <h2>Behavioral Flows</h2>
+      </div>
+
+      <div class="diagram-grid">
+        <div class="diagram-card">
+          <p class="category">Sequence</p>
+          <h2>Main Agent Loop</h2>
+          <p>User request → CLI initialization → AgentLoop.run → Provider.complete → PermissionGate.check → ToolRegistry.execute → ToolResult → Provider.complete (with tools) → ModelResponse → User response. Includes optional tool execution loop fragment.</p>
+          <div class="tags">
+            <span class="tag">14 Messages</span>
+            <span class="tag">6 Lifelines</span>
+            <span class="tag">Opt Fragment</span>
+            <span class="tag accent">Focal: AgentLoop</span>
+          </div>
+          <a href="diagram-design/sequence-main-loop.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>sequence-main-loop.html</code></div>
+        </div>
+
+        <div class="diagram-card">
+          <p class="category">Sequence</p>
+          <h2>Tool Execution Flow</h2>
+          <p>AgentLoop checks PermissionGate → ToolRegistry.execute → Concrete Tool → validate_path → check_deny_list (BashTool) → tool executes → ToolResult returns up the chain. Includes alt fragment for denied permissions.</p>
+          <div class="tags">
+            <span class="tag">11 Messages</span>
+            <span class="tag">6 Lifelines</span>
+            <span class="tag">Alt Fragment</span>
+            <span class="tag accent">Focal: Concrete Tool</span>
+          </div>
+          <a href="diagram-design/sequence-tool-execution.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>sequence-tool-execution.html</code></div>
+        </div>
+
+        <div class="diagram-card">
+          <p class="category">Sequence</p>
+          <h2>Completion Review Loop</h2>
+          <p>CLI runs CompletionResolver → AgentLoop executes request → Provider returns response → CompletionResolver reviews via Provider → loop until complete or max attempts → CompletionResult returned to CLI. Includes loop and alt fragments.</p>
+          <div class="tags">
+            <span class="tag">9 Messages</span>
+            <span class="tag">4 Lifelines</span>
+            <span class="tag">Loop + Alt</span>
+            <span class="tag accent">Focal: CompletionResolver</span>
+          </div>
+          <a href="diagram-design/sequence-completion-review.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>sequence-completion-review.html</code></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Responsibility Section -->
+    <section class="section">
+      <div class="section-header">
+        <p class="eyebrow">Swimlane Diagram</p>
+        <h2>Cross-Layer Responsibilities</h2>
+      </div>
+
+      <div class="diagram-grid">
+        <div class="diagram-card" style="grid-column: 1 / -1;">
+          <p class="category">Swimlane</p>
+          <h2>Component Responsibilities</h2>
+          <p>Six swimlanes (CLI, Agent Layer, Provider, Tools, Core Types, External) showing each layer's responsibilities and critical handoffs: CLI initializes and runs, AgentLoop orchestrates, Provider completes, ToolRegistry manages tools, Core Types define data structures, External provides dependencies.</p>
+          <div class="tags">
+            <span class="tag">6 Lanes</span>
+            <span class="tag">Handoffs</span>
+            <span class="tag">RACI-style</span>
+            <span class="tag accent">Focal: AgentLoop</span>
+          </div>
+          <a href="diagram-design/responsibility-swimlane.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>responsibility-swimlane.html</code></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Legacy Diagrams Section -->
+    <section class="section">
+      <div class="section-header">
+        <p class="eyebrow">Legacy Mermaid Diagrams</p>
+        <h2>Original Mermaid Source</h2>
+      </div>
+
+      <div class="diagram-grid">
+        <div class="diagram-card">
+          <p class="category">Mermaid</p>
+          <h2>Class Diagram (Mermaid)</h2>
+          <p>Original comprehensive class diagram rendered via Mermaid.js. Includes all 50+ classes, interfaces, enums, and relationships in a single diagram.</p>
+          <div class="tags">
+            <span class="tag">Mermaid.js</span>
+            <span class="tag">Single Diagram</span>
+            <span class="tag">All Classes</span>
+          </div>
+          <a href="class_diagram.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>class_diagram.mermaid</code></div>
+        </div>
+
+        <div class="diagram-card">
+          <p class="category">Mermaid</p>
+          <h2>Package/Layer Diagram (Mermaid)</h2>
+          <p>Layered architecture showing module organization and dependencies across 10 architectural layers.</p>
+          <div class="tags">
+            <span class="tag">Mermaid.js</span>
+            <span class="tag">10 Layers</span>
+            <span class="tag">Dependencies</span>
+          </div>
+          <a href="package_layer_diagram.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>package_layer_diagram.mermaid</code></div>
+        </div>
+
+        <div class="diagram-card">
+          <p class="category">Mermaid</p>
+          <h2>Responsibility Matrix (Mermaid)</h2>
+          <p>Responsibility assignment matrix with graph and tabular views for 28 components.</p>
+          <div class="tags">
+            <span class="tag">Mermaid.js</span>
+            <span class="tag">RAM</span>
+            <span class="tag">Tabular View</span>
+          </div>
+          <a href="responsibility_matrix.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>responsibility_matrix.mermaid</code></div>
+        </div>
+
+        <div class="diagram-card">
+          <p class="category">Mermaid</p>
+          <h2>CRC Cards (Mermaid)</h2>
+          <p>Class-Responsibility-Collaborator cards for 24 major classes organized by layer.</p>
+          <div class="tags">
+            <span class="tag">Mermaid.js</span>
+            <span class="tag">CRC Cards</span>
+            <span class="tag">Layer Organized</span>
+          </div>
+          <a href="crc_cards.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>crc_cards.mermaid</code></div>
+        </div>
+
+        <div class="diagram-card">
+          <p class="category">Mermaid</p>
+          <h2>Sequence Diagrams (Mermaid)</h2>
+          <p>Four key sequence diagrams: Main Agent Loop, Tool Execution, Completion Review, Input Normalization.</p>
+          <div class="tags">
+            <span class="tag">Mermaid.js</span>
+            <span class="tag">4 Flows</span>
+            <span class="tag">Sequence</span>
+          </div>
+          <a href="sequence_diagrams.html" target="_blank">View Diagram →</a>
+          <div class="file-info">Source: <code>sequence_diagrams.mermaid</code></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <p>Generated using <strong>Diagram Design</strong> editorial design system</p>
+    <p>AI Agent CLI Architecture Documentation · <code>docs/architecture/</code></p>
+    <p style="margin-top: 1rem; font-size: 0.8rem;">
+      Design tokens: <code>--color-paper</code> <code>--color-ink</code> <code>--color-muted</code> <code>--color-accent</code> ·
+      Fonts: <code>Instrument Serif</code> <code>Geist</code> <code>Geist Mono</code>
+    </p>
+  </footer>
+</body>
+</html>
