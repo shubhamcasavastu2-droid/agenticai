@@ -1,0 +1,47 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "anthropic/claude-sonnet-4",
+  "small_model": "anthropic/claude-haiku-3.5",
+  "default_agent": "code",
+  "permissions": {
+    "bash": "allow",
+    "edit": {
+      "src/**": "allow",
+      "tests/**": "allow",
+      "*.md": "allow",
+      "*.json": "allow",
+      "*.toml": "allow",
+      "*.py": "allow",
+      "*.ts": "allow",
+      "*.tsx": "allow",
+      "*": "ask"
+    },
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "task": "allow",
+    "webfetch": "allow",
+    "websearch": "allow",
+    "skill": "allow",
+    "external_directory": "deny"
+  },
+  "mcp": {
+    "browser-harness": {
+      "type": "local",
+      "command": ["python", "-m", "browser_harness.mcp_server"],
+      "workdir": "browser-harness",
+      "enabled": true
+    }
+  },
+  "skills": {
+    "paths": [
+      "./scientific-agent-skills/skills",
+      "./browser-harness/skills"
+    ]
+  },
+  "instructions": [
+    "AGENTS.md",
+    "CLAUDE.md"
+  ]
+}
