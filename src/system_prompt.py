@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import platform
 from datetime import datetime
 from pathlib import Path
@@ -119,6 +120,3 @@ def get_tool_descriptions(tools: list) -> str:
     for tool in tools:
         lines.append(f"- **{tool.name}**: {tool.description}")
     return "\n".join(lines)
-
-
-import os

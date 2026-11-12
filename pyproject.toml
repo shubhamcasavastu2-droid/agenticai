@@ -31,9 +31,16 @@ packages = ["src"]
 
 [tool.ruff]
 target-version = "py311"
-line-length = 100
+line-length = 120
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "UP", "W"]
 
+[tool.ruff.lint.per-file-ignores]
+# Prompt templates are prose; wrapping them would change the text sent to the model.
+"src/system_prompt.py" = ["E501"]
+
 [tool.pytest.ini_options]
-asyncio-mode = "auto"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]

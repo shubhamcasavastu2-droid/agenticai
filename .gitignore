@@ -10,3 +10,7 @@ package-lock.json
 package.json
 test_diagram.mmd
 overview.md
+
+# Runtime logs and session transcripts
+logs/
+.agentic/
