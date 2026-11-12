@@ -6,7 +6,7 @@ from typing import Any
 
 from .agent import AgentLoop
 from .logger import log_info, log_warning
-from .provider import Provider
+from .provider import Provider, ProviderTimeoutError
 from .types import Message, ReasoningBlock, TextBlock, ToolCall, ToolResult
 
 COMPLETION_REVIEW_PROMPT = """You are a completion reviewer for a coding agent.
@@ -53,7 +53,20 @@ class CompletionResolver:
             findings="No completion review was performed.",
         )
         for attempt in range(1, self.max_attempts + 1):
-            response = await agent.run()
+            try:
+                response = await agent.run()
+            except ProviderTimeoutError as e:
+                log_warning(f"COMPLETION_REVIEW: agent timeout attempt={attempt} {e}")
+                return CompletionResult(
+                    response=response,
+                    complete=False,
+                    attempts=attempt,
+                    findings=(
+                        "The model request timed out while generating a response. "
+                        "Check that the model server is running and responsive, or increase "
+                        "AGENTIC_REQUEST_TIMEOUT_SECONDS."
+                    ),
+                )
             if agent.state.model_output_limit_reached and response.startswith("Error:"):
                 return CompletionResult(
                     response=response,
@@ -65,20 +78,33 @@ class CompletionResolver:
                         "response indefinitely."
                     ),
                 )
-            review_response = await self.provider.complete(
-                system=COMPLETION_REVIEW_PROMPT,
-                messages=[
-                    Message.user(
-                        self._build_review_input(
-                            original_request,
-                            normalized_request,
-                            response,
-                            agent,
+            try:
+                review_response = await self.provider.complete(
+                    system=COMPLETION_REVIEW_PROMPT,
+                    messages=[
+                        Message.user(
+                            self._build_review_input(
+                                original_request,
+                                normalized_request,
+                                response,
+                                agent,
+                            )
                         )
-                    )
-                ],
-                tools=[],
-            )
+                    ],
+                    tools=[],
+                )
+            except ProviderTimeoutError as e:
+                log_warning(f"COMPLETION_REVIEW: review timeout attempt={attempt} {e}")
+                return CompletionResult(
+                    response=response,
+                    complete=False,
+                    attempts=attempt,
+                    findings=(
+                        "The model request timed out while reviewing completion. "
+                        "Check that the model server is running and responsive, or increase "
+                        "AGENTIC_REQUEST_TIMEOUT_SECONDS."
+                    ),
+                )
             review = self._parse_review(review_response.blocks)
             if review.complete:
                 log_info(f"COMPLETION_REVIEW: complete=True attempt={attempt}")
