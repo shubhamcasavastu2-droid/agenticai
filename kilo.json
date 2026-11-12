@@ -29,7 +29,7 @@
   "mcp": {
     "browser-harness": {
       "type": "local",
-      "command": ["python", "-m", "browser_harness.mcp_server"],
+      "command": ["uv", "run", "--extra", "mcp", "browser-harness-mcp"],
       "workdir": "browser-harness",
       "enabled": true
     }

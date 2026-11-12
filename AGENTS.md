@@ -1,21 +1,43 @@
 # AIAgests Workspace — Agent Guidance
 
-This workspace contains multiple independent projects. Each subdirectory has its own `AGENTS.md` with detailed guidance — read the relevant one before working in that project.
+This workspace is a git superproject of four submodules (see `.gitmodules`). `backend/` (Agentic CLI) is the project under active development; `browser-harness/`, `scientific-agent-skills/` and `openclaw/` are vendored forks of upstream projects. Read the relevant subproject's docs before working in it.
 
 ## Workspace Structure
 
 ```
 /Users/glbtech/PycharmProjects/AIAgests/
-├── .github/                    # GitHub Actions workflows (workspace-level)
-├── backend/                    # Empty — placeholder for future backend services
+├── .gitmodules                 # Submodule URLs
+├── backend/                    # Agentic CLI (Python) — submodule, JaiBharat27/aiagentic
 ├── browser-harness/            # CDP browser automation harness (Python)
 ├── kilo.json                   # Kilo CLI configuration (this workspace)
 ├── openclaw/                   # OpenClaw agent platform (TypeScript/Node.js)
-├── rae-work/                   # Empty — placeholder for RAE work
+├── rae-work/                   # Empty placeholder (untracked)
 └── scientific-agent-skills/    # Collection of scientific Agent Skills (Python)
 ```
 
 ## Subproject Overview
+
+### backend/ (Agentic CLI)
+**Purpose**: Minimal, provider-agnostic coding agent CLI (any OpenAI-compatible API).
+**Language**: Python 3.11+ (uv)
+**Key files**:
+- `src/cli.py` — REPL, providers, display and permission callbacks
+- `src/commands/` — slash commands (registry, core, permission, skills, agents, interaction)
+- `src/agent.py` — agent loop (max steps, loop guard, context compaction hook)
+- `src/provider.py` — OpenAI-compatible client (retries, streaming)
+- `src/context.py` — context-window estimation and compaction
+- `src/completion.py` — completion reviewer
+- `src/permissions.py`, `src/shell_safety.py` — permission gate, path jail, bash safety rules
+- `src/session.py` — JSONL session transcripts (`/resume`)
+- `.agents/skills/`, `.agents/agents/` — skills and agents loaded by the CLI
+
+**Commands** (run from `backend/`):
+```bash
+uv sync --extra dev
+uv run python -m src.cli
+uv run ruff check src tests
+uv run pytest -q
+```
 
 ### browser-harness/
 **Purpose**: Thin CDP layer connecting agents to browsers.  
@@ -85,16 +107,13 @@ pnpm openclaw ...           # CLI commands
 pnpm docs:list              # list documentation
 ```
 
-### .github/
-Workspace-level GitHub Actions:
-- `modernize/java-upgrade/` — Java modernization workflow (hooks, scripts)
-
-### backend/ and rae-work/
-Empty placeholder directories for future work.
+### rae-work/
+Empty placeholder directory. (`.github/` and `.vscode/` at the root are local-only and ignored.)
 
 ## Cross-Project Notes
 
-- **Kilo configuration**: `kilo.json` at workspace root configures default model (Claude Sonnet 4), permissions, MCP servers, and skill paths for both `browser-harness/skills` and `scientific-agent-skills/skills`.
+- **Kilo configuration**: `kilo.json` at workspace root configures the default model, permissions, the browser-harness MCP server (`uv run --extra mcp browser-harness-mcp`; run `uv sync --extra mcp` in `browser-harness/` once), and skill paths for both `browser-harness/skills` and `scientific-agent-skills/skills`.
+- **Vendored forks**: don't add local files to `browser-harness/`, `scientific-agent-skills/` or `openclaw/` (e.g. a local skill there breaks the fork's contract tests). Local skills go in `backend/.agents/skills/`.
 - **No shared dependencies**: Each subproject manages its own dependencies and environments. Do not assume packages from one are available in another.
 - **Agent instructions**: When working in a subproject, read its `AGENTS.md` first. Subproject `AGENTS.md` files are authoritative for their directory.
 - **Skills**: The `skills` config in `kilo.json` points to both skill collections. Use the `skill` tool to load a specific skill by name.
@@ -103,6 +122,7 @@ Empty placeholder directories for future work.
 
 | Task | Location | Command |
 |------|----------|---------|
+| Agentic CLI | `backend/` | `uv run python -m src.cli` |
 | Browser automation | `browser-harness/` | `./browser-harness` |
 | Scientific skills | `scientific-agent-skills/skills/` | `uv run skills-ref validate skills/<name>` |
 | OpenClaw platform | `openclaw/` | `pnpm dev` / `pnpm openclaw` |

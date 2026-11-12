@@ -1,0 +1,12 @@
+[submodule "backend"]
+	path = backend
+	url = https://github.com/JaiBharat27/aiagentic.git
+[submodule "browser-harness"]
+	path = browser-harness
+	url = https://github.com/shubhamcasavastu2-droid/browser-harness.git
+[submodule "scientific-agent-skills"]
+	path = scientific-agent-skills
+	url = https://github.com/shubhamcasavastu2-droid/scientific-agent-skills.git
+[submodule "openclaw"]
+	path = openclaw
+	url = https://github.com/shubhamcasavastu2-droid/openclaw.git
