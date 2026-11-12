@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
+from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from .context import ContextManager
 from .logger import log_info, log_warning
 from .permissions import PermissionGate
 from .provider import Provider
@@ -20,6 +23,9 @@ from .types import (
 
 MAX_STEPS = 50
 MAX_OUTPUT_LIMIT_CONTINUATIONS = 2
+# Loop guard: stop when the same set of tool calls recurs this many times within the window.
+LOOP_WINDOW_STEPS = 10
+LOOP_MAX_REPEATS = 3
 
 
 @dataclass
@@ -27,6 +33,7 @@ class AgentState:
     messages: list[Message]
     step_count: int = 0
     last_tool_calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    recent_call_signatures: deque[str] = field(default_factory=lambda: deque(maxlen=LOOP_WINDOW_STEPS))
     model_output_limit_reached: bool = False
 
 
@@ -60,15 +67,17 @@ class AgentLoop:
         self.clarification_callback = clarification_callback
         self.context_window_tokens = context_window_tokens
         self.max_completion_tokens = max_completion_tokens
+        self.context = ContextManager(context_window_tokens, max_completion_tokens)
         self.state = AgentState(messages=[])
 
     def add_user_message(self, text: str) -> None:
         self.state.messages.append(Message.user(text))
 
-    async def run(self, noTool: bool = False, custom_prompt: str = "") -> str:
+    async def run(self) -> str:
         """Run the agent loop until completion or max steps."""
         self.state.step_count = 0
         self.state.last_tool_calls = []
+        self.state.recent_call_signatures.clear()
         self.state.model_output_limit_reached = False
         empty_response_retries = 0
         clarification_requested = False
@@ -77,13 +86,18 @@ class AgentLoop:
         while self.state.step_count < self.max_steps:
             self.state.step_count += 1
 
-            # Get model response
+            tools = self.registry.schemas()
+            self.context.compact(self.system_prompt, self.state.messages, tools)
+            self.context.record_estimate(self.context.estimate(self.system_prompt, self.state.messages, tools))
+
             response = await self.provider.complete(
-                system="" if custom_prompt else self.system_prompt,
-                messages=self.state.messages if not custom_prompt else [Message.user(custom_prompt)],
-                tools=self.registry.schemas() if not noTool else [],
+                system=self.system_prompt,
+                messages=self.state.messages,
+                tools=tools,
             )
             self._log_context_usage(response)
+            if response.usage:
+                self.context.calibrate(response.usage.get("input_tokens"))
 
             if self.reasoning_callback:
                 for block in response.blocks:
@@ -171,11 +185,20 @@ class AgentLoop:
             if not tool_calls:
                 return "".join(block.text for block in text_blocks)
 
-            # Check for repeated identical tool calls
+            # Loop guard: identical consecutive calls, or the same calls recurring in a short window
+            # (catches A-B-A-B cycles as well as A-A).
             current_calls = [(tc.name, tc.arguments) for tc in tool_calls]
             if current_calls == self.state.last_tool_calls:
                 return "Error: Repeated identical tool calls detected. Stopping to prevent loop."
             self.state.last_tool_calls = current_calls
+            signature = json.dumps(sorted(json.dumps([n, a], sort_keys=True) for n, a in current_calls))
+            if self.state.recent_call_signatures.count(signature) + 1 >= LOOP_MAX_REPEATS:
+                return (
+                    "Error: The same tool calls keep recurring without progress "
+                    f"({LOOP_MAX_REPEATS} times in the last {LOOP_WINDOW_STEPS} steps). "
+                    "Stopping to prevent a loop."
+                )
+            self.state.recent_call_signatures.append(signature)
 
             # Execute tool calls
             for tool_call in tool_calls:
@@ -215,6 +238,29 @@ class AgentLoop:
             log_info(message + " status=within_context_window")
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResult:
+        if tool_call.parse_error:
+            return ToolResult(
+                call_id=tool_call.id,
+                output=(
+                    f"Tool error: could not parse arguments for '{tool_call.name}': {tool_call.parse_error}. "
+                    "Re-issue the call with a valid JSON object matching the tool schema."
+                ),
+                is_error=True,
+            )
+        if self.registry.get(tool_call.name) is None:
+            available = ", ".join(t.name for t in self.registry.all()) or "none"
+            return ToolResult(
+                call_id=tool_call.id,
+                output=f"Tool error: unknown tool '{tool_call.name}'. Available tools: {available}.",
+                is_error=True,
+            )
+
+        # Safety rules run first so no allow-list or callback can bypass them.
+        violation = self.permission_gate.safety_violation(tool_call.name, tool_call.arguments)
+        if violation:
+            log_warning(f"PERMISSION_BLOCKED: {tool_call.name} {violation}")
+            return ToolResult(call_id=tool_call.id, output=f"Permission denied: {violation}", is_error=True)
+
         if self.permission_callback:
             allowed, reason = await self.permission_callback(tool_call.name, tool_call.arguments)
         else:
@@ -249,3 +295,4 @@ class AgentLoop:
         self.state.messages.clear()
         self.state.step_count = 0
         self.state.last_tool_calls = []
+        self.state.recent_call_signatures.clear()
