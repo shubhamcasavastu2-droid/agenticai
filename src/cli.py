@@ -22,7 +22,7 @@ from .logger import (
     log_tool_call,
 )
 from .permissions import PermissionGate, check_deny_list
-from .provider import OpenAICompatibleProvider, ProviderAuthenticationError
+from .provider import OpenAICompatibleProvider, ProviderAuthenticationError, ProviderTimeoutError
 from .skills import SkillLoader
 from .system_prompt import (
     build_system_prompt,
@@ -160,6 +160,15 @@ class CLI:
                 console.print("\n[yellow]Interrupted. Type /exit to quit.[/yellow]")
             except ProviderAuthenticationError as e:
                 console.print(f"[red]Authentication error: {e}[/red]")
+                log_error(str(e))
+            except ProviderTimeoutError as e:
+                console.print(
+                    "[red]Model request timed out.[/red] "
+                    "The model server did not respond within the configured timeout. "
+                    "Check that the model server is running and responsive, or increase "
+                    "AGENTIC_REQUEST_TIMEOUT_SECONDS (current: "
+                    f"{self.config.request_timeout_seconds}s)."
+                )
                 log_error(str(e))
             except Exception as e:
                 detail = str(e).strip() or repr(e)
