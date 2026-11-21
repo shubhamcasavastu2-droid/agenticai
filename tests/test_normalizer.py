@@ -163,3 +163,112 @@ def test_refurbish_prompt_prohibits_invented_content():
     prompt = Config().user_input_refurbish_prompt
     assert "Do not invent requirements, assumptions, or file content" in prompt
     assert "flag it as missing information" in prompt
+
+
+# ------------------------------------------------------------------
+# Recursive gap / duplicate question / scope containment tests
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_enriched_task_title_not_reanalyzed(monkeypatch, tmp_path):
+    """An enriched task title (task — answer) must NOT be re-analyzed as a gap.
+
+    This prevents recursive gaps where the answer itself gets flagged as a new
+    missing requirement.
+    """
+    provider = ScriptedProvider([text_response("COMPLETE")])
+    cli = make_cli(monkeypatch, provider, tmp_path)
+
+    # Simulate a previously resolved gap: the canonical title is resolved.
+    cli.resolved_gaps.add("Create config.yaml")
+
+    # The normalized text might contain an enriched title like
+    # "Create config.yaml — Database connection settings".
+    gap, suggestions = await cli._detect_gap(
+        "Create a config file", "Create config.yaml — Database connection settings"
+    )
+
+    # Canonical title strips the enrichment, matches resolved_gaps → skip.
+    assert gap is None
+    assert suggestions == []
+    assert provider.calls == []  # no provider call for a resolved task
+
+
+@pytest.mark.asyncio
+async def test_resolved_gap_skips_provider_call(monkeypatch, tmp_path):
+    """A resolved gap must not trigger any provider call (no duplicate questions)."""
+    provider = ScriptedProvider([text_response("COMPLETE")])
+    cli = make_cli(monkeypatch, provider, tmp_path)
+
+    cli.resolved_gaps.add("Write README")
+
+    gap, suggestions = await cli._detect_gap("Document the project", "Write README")
+    assert gap is None
+    assert suggestions == []
+    assert provider.calls == []
+
+
+@pytest.mark.asyncio
+async def test_canonical_title_strips_enrichment():
+    """Canonical task title must strip any " — answer" suffix."""
+    cli = CLI.__new__(CLI)  # no __init__ needed for pure helper
+    assert cli._canonical_task_title("Create config.yaml") == "Create config.yaml"
+    assert (
+        cli._canonical_task_title("Create config.yaml — Database connection settings")
+        == "Create config.yaml"
+    )
+    assert cli._canonical_task_title("  Write README  ") == "Write README"
+
+
+def test_loaded_capabilities_dedup():
+    """Already-loaded capabilities must not be re-added (deduplication)."""
+    cli = CLI.__new__(CLI)
+    cli.loaded_capabilities = set()
+
+    cli._register_loaded_capabilities(
+        [{"type": "skill", "name": "code-reviewer", "task_index": 0, "description": "x"}]
+    )
+    cli._register_loaded_capabilities(
+        [{"type": "skill", "name": "code-reviewer", "task_index": 0, "description": "x"}]
+    )
+    cli._register_loaded_capabilities(
+        [{"type": "agent", "name": "doc-agent", "task_index": 1, "description": "y"}]
+    )
+
+    assert cli.loaded_capabilities == {"skill:code-reviewer", "agent:doc-agent"}
+
+
+def test_assemble_normalized_no_load_tasks():
+    """_assemble_normalized must NOT add 'Load X' lines as executable tasks
+    (prevents scope expansion and task contamination)."""
+    cli = CLI.__new__(CLI)
+
+    result = cli._assemble_normalized(
+        original_input="Create a file",
+        objective="Create docs/overview.md",
+        tasks=[{"title": "Create docs/overview.md", "status": "pending"}],
+        matched_capabilities=[
+            {
+                "type": "skill",
+                "name": "doc-generator",
+                "task_index": 0,
+                "description": "Generates docs",
+            }
+        ],
+    )
+
+    # Capability info present but NOT as a "Load X" task line.
+    assert "doc-generator" in result
+    assert "loaded into main context" in result
+    assert "Load " not in result  # no load tasks added as executable steps
+    assert "Tasks to achieve:\n- Create docs/overview.md" in result
+
+
+def test_normalizer_prompt_prevents_scope_expansion():
+    """The normalizer prompt must not encourage scope expansion."""
+    prompt = Config().normalizer_system_prompt
+    assert "Do not suggest additional features" in prompt
+    assert "expand the task scope" in prompt
+    assert "minimal, actionable tasks" in prompt
+

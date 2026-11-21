@@ -1,3 +1,18 @@
+"""
+Command-Line Interface for Agentic CLI.
+
+This module implements the terminal front-end including:
+- REPL (Read-Eval-Print Loop) for user interaction
+- Slash command registry and execution (/help, /clear, /model, /resume, /permission, /skills, /agents, /plan, /ask, /exit)
+- Permission callbacks for tool approval
+- Display formatting with Rich
+- Session management and resumption
+- Input normalization via provider
+- Agent loop integration
+
+The CLI class is initialized by Application and coordinates all user-facing interactions.
+"""
+
 from __future__ import annotations
 
 import readline
@@ -57,9 +72,12 @@ class CLI:
         self._stream_open = False
         self.skill_loader: Any = None
         self.agent_loader: Any = None
-        # Confirmed gap decisions preserved across normalize_input calls so
-        # resolved questions are not asked again.
+        # Confirmed gap decisions keyed by canonical task title (don't re-ask resolved gaps).
         self.confirmed_decisions: dict[str, str] = {}
+        # Tasks whose gaps have been resolved (skip re-detection).
+        self.resolved_gaps: set[str] = set()
+        # Capabilities already loaded into the main context (deduplicate loading).
+        self.loaded_capabilities: set[str] = set()
         self._setup_readline()
 
     # ------------------------------------------------------------------ properties
@@ -159,38 +177,39 @@ class CLI:
             return normalized_text
 
         # Step 2: split into objective + tasks.
-        objective, tasks = self._split_normalized(normalized_text)
-        if not tasks:
+        objective, raw_tasks = self._split_normalized(normalized_text)
+        if not raw_tasks:
             self._ui.input_normalized(normalized_text)
             return normalized_text
 
-        # Step 3: skip tasks whose gap was already confirmed in a prior call
-        # (don't ask resolved questions again).
-        pending_tasks = [
-            t for t in tasks if t not in self.confirmed_decisions
-        ]
+        # Step 3: build canonical task titles (strip any " — answer" enrichment
+        # from prior calls so we match against confirmed decisions).
+        tasks: list[str] = []
+        for t in raw_tasks:
+            canonical = self._canonical_task_title(t)
+            if canonical not in tasks:
+                tasks.append(canonical)
+
+        # Step 4: skip tasks whose gap was already resolved (don't re-ask,
+        # don't re-detect — prevents recursive gaps and duplicate questions).
+        pending_tasks = [t for t in tasks if t not in self.resolved_gaps]
         if not pending_tasks:
             self._ui.input_normalized(normalized_text)
             return normalized_text
 
-        # Step 4: detect actual gaps only across pending tasks.
+        # Step 5: detect actual gaps only against the ORIGINAL objective and
+        # canonical task titles — never against gap descriptions, answers, or
+        # generated tasks (prevents recursive gaps).
         gaps: list[dict[str, Any]] = []
         for task in pending_tasks:
             gap, suggestions = await self._detect_gap(objective, task)
             if gap:
                 gaps.append({"task": task, "gap": gap, "suggestions": suggestions})
 
-        # Step 5: if no real gaps, continue with normalized input unchanged.
+        # Step 6: if no real gaps, continue with normalized input unchanged.
         if not gaps:
             self._ui.input_normalized(normalized_text)
             return normalized_text
-
-        # Step 6: show out-of-scope items on screen.
-        self._ui.console.print("\n[ui.header]Out of scope[/ui.header]")
-        self._ui.console.print(
-            "Items outside the current objective will be ignored unless you add them:"
-        )
-        self._ui.console.print()
 
         # Step 7: clarify each gap one-by-one with suggestions.
         clarified_tasks: list[dict[str, str]] = []
@@ -217,14 +236,20 @@ class CLI:
                 f"Did you mean {suggestion_text}? Or provide more details."
             )
             answer = await self.ask_user(question, suggestions or None)
-            # Preserve the confirmed decision so this question is not asked again.
+            # Preserve the confirmed decision keyed by canonical task title so
+            # this question is never asked again. Do NOT enrich the task title
+            # with the answer (prevents recursive gap detection).
             self.confirmed_decisions[task] = (answer or "").strip()
-            enriched = f"{task} — {answer}" if answer and answer.strip() else task
-            clarified_tasks.append({"title": enriched, "status": "pending"})
+            self.resolved_gaps.add(task)
+            clarified_tasks.append({"title": task, "status": "pending"})
 
-        # Step 8: reference the normalized input with answers again.
-        # Step 9: check existing skills/agents (from agents.md) to load for each task.
+        # Step 8: check existing skills/agents — internal only, never added as
+        # executable tasks (prevents scope expansion and task contamination).
         matched_capabilities = await self._match_existing_capabilities(objective, tasks)
+        self._register_loaded_capabilities(matched_capabilities)
+
+        # Step 9: reference the normalized input with answers preserved in
+        # confirmed_decisions, but task titles stay clean.
         final_text = self._assemble_normalized(
             user_input, objective, clarified_tasks, matched_capabilities
         )
@@ -250,8 +275,14 @@ class CLI:
 
         Returns (gap_description_or_None, [suggestions]).
         Only returns a gap if one actually exists; otherwise returns (None, []).
+        Skips entirely if the task's canonical title is already resolved
+        (prevents recursive gaps and duplicate questions).
         """
         if not self.interactive or self.provider is None:
+            return None, []
+
+        canonical = self._canonical_task_title(task)
+        if canonical in self.resolved_gaps:
             return None, []
 
         detect_prompt = (
@@ -259,7 +290,7 @@ class CLI:
         "that is essential to fulfilling the user's actual objective.\n\n"
 
         f"Overall objective: {objective}\n"
-        f"Task to review: {task}\n\n"
+        f"Task to review: {canonical}\n\n"
 
         "Rules:\n"
         "- Detect only gaps that materially affect the requested outcome.\n"
@@ -309,6 +340,20 @@ class CLI:
                     break
             return gap, suggestions
         return None, []
+
+    def _canonical_task_title(self, task: str) -> str:
+        """Strip any " — answer" enrichment from a task title to get the canonical
+        form used for matching confirmed decisions and resolved gaps."""
+        return task.split(" — ", 1)[0].strip()
+
+    def _register_loaded_capabilities(
+        self, matched_capabilities: list[dict[str, Any]]
+    ) -> None:
+        """Record capabilities already loaded into the main context window so
+        they are not re-added on subsequent calls (deduplication)."""
+        for m in matched_capabilities or []:
+            key = f"{m['type']}:{m['name']}"
+            self.loaded_capabilities.add(key)
 
     async def _match_existing_capabilities(
         self, objective: str, tasks: list[str]
@@ -398,6 +443,10 @@ class CLI:
                     if len(parts) != 2:
                         continue
                     ctype, cname = parts[0], parts[1].strip()
+                    # Skip capabilities already loaded into the main context
+                    # window (deduplication — prevents re-loading and scope creep).
+                    if f"{ctype}:{cname}" in self.loaded_capabilities:
+                        continue
                     capability = None
                     if ctype == "skill":
                         capability = skill_by_name.get(cname)
@@ -432,29 +481,26 @@ class CLI:
         matched_capabilities = matched_capabilities or []
         task_lines = "\n".join(f"- {t['title']}" for t in tasks)
 
+        # Capability info is kept internal (loaded into main context window),
+        # NOT added as executable tasks — prevents scope expansion and task
+        # contamination.
         capability_lines: list[str] = []
-        load_task_lines: list[str] = []
         for m in matched_capabilities:
             ctype = m["type"]
             cname = m["name"]
             desc = m.get("description", "")
             capability_lines.append(
-                f"- [{ctype}] {cname}: {desc} (applies to task index {m['task_index'] + 1})"
+                f"- [{ctype}] {cname}: {desc} (loaded into main context)"
             )
-            load_task_lines.append(f"- Load {ctype} '{cname}' to help complete its task")
 
         return (
             f"Original user input: {original_input}\n\n"
             f"User wants to achieve: {objective}\n"
             f"Tasks to achieve:\n{task_lines}"
             + (
-                "\n\nExisting capabilities to load:\n" + "\n".join(capability_lines)
+                "\n\nExisting capabilities loaded into main context:\n"
+                + "\n".join(capability_lines)
                 if capability_lines
-                else ""
-            )
-            + (
-                "\n\nAdditional tasks to load capabilities:\n" + "\n".join(load_task_lines)
-                if load_task_lines
                 else ""
             )
         )
