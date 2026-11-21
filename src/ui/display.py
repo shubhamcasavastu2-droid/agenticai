@@ -208,8 +208,39 @@ class Display:
     # ------------------------------------------------------------------ prompts
 
     def prompt(self, message: str, *, choices: list[str] | None = None, default: str | None = None) -> str:
-        """Prompt the user with Rich-styled text."""
+        """Prompt the user with Rich-styled text.
+
+        When `choices` are provided, they are shown as numbered options and the user may
+        select one by typing its number, or type the full option text. Free-text input is
+        always accepted.
+        """
         from rich.prompt import Prompt
 
         style = "ui.input" if choices else "ui.accent"
-        return Prompt.ask(f"[{style}]{message}[/{style}]", choices=choices, default=default)
+        prompt_text = message
+        if choices:
+            lines = [message]
+            for index, choice in enumerate(choices, 1):
+                lines.append(f"  [{index}] {choice}")
+            if default is not None:
+                lines.append(f"  (default: {default})")
+            prompt_text = "\n".join(lines)
+            prompt_text += "\nSelect an option or type your answer: "
+        else:
+            prompt_text = message
+
+        while True:
+            answer = Prompt.ask(f"[{style}]{prompt_text}[/{style}]", default=default)
+            if answer is None or answer == "":
+                if default is not None:
+                    return default
+                continue
+            # Numeric selection maps to the choice text.
+            if choices:
+                try:
+                    index = int(answer.strip())
+                    if 1 <= index <= len(choices):
+                        return choices[index - 1]
+                except ValueError:
+                    pass
+            return answer
