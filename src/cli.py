@@ -245,7 +245,7 @@ class CLI:
         from rich.panel import Panel
         from rich.table import Table
         from rich.text import Text
-        
+
         if output == "started":
             # Show tool starting
             table = Table(title=f"▶️  Running: {tool_name}", border_style="cyan")
@@ -262,18 +262,18 @@ class CLI:
             else:
                 border_style = "green"
                 title = f"✅ {tool_name} (done)"
-            
+
             # Truncate output for display
             display_output = output[:500]
             if len(output) > 500:
                 display_output += f"\n... (truncated, {len(output)} total chars)"
-            
+
             console.print(Panel(
                 Text(display_output),
                 title=title,
                 border_style=border_style,
             ))
-        
+
         log_tool_call(tool_name, args, output, is_error)
 
     async def _permission_callback(self, tool_name: str, args: dict[str, Any]) -> tuple[bool, str | None]:
@@ -587,7 +587,7 @@ class CLI:
         console.print(f"[cyan]Designing skill: {name}[/cyan]")
         if description:
             console.print(f"Initial idea: {description}\n")
-        
+
         # If not interactive (piped input), use description directly
         if not IS_INTERACTIVE:
             console.print("[yellow]Non-interactive mode: using description to generate skill[/yellow]")
@@ -609,7 +609,7 @@ class CLI:
                 ("workflow", "Describe the step-by-step workflow in 3-5 steps"),
                 ("constraints", "Any special requirements, constraints, or example use cases?"),
             ]
-            
+
             answers = {}
             for key, question in questions:
                 answer = Prompt.ask(f"[bold cyan]{question}[/bold cyan]")
@@ -617,7 +617,7 @@ class CLI:
                     console.print("[yellow]Skipping remaining questions...[/yellow]")
                     break
                 answers[key] = answer
-        
+
         # Build design prompt for agent
         design_prompt = f"""Create a complete SKILL.md file for a skill named "{name}".
 
@@ -643,20 +643,20 @@ Output ONLY the skill file content, nothing else."""
         # Use agent to generate the skill
         from .agent import AgentLoop
         from .permissions import PermissionGate
-        
+
         design_permission = PermissionGate()
         design_permission.allow_auto("read_file")
         design_permission.allow_auto("write_file")
         design_permission.allow_auto("glob")
         design_permission.allow_auto("grep")
         design_permission.allow_auto("bash")
-        
+
         async def auto_allow(tool_name: str, args: dict[str, Any]) -> tuple[bool, str | None]:
             return True, None
 
         if self.provider is None:
             raise RuntimeError("Provider is not initialized")
-        
+
         design_agent = AgentLoop(
             provider=self.provider,
             registry=self.registry,
@@ -669,29 +669,29 @@ Output ONLY the skill file content, nothing else."""
             context_window_tokens=self.config.context_window_tokens,
             max_completion_tokens=self.config.max_completion_tokens,
         )
-        
+
         design_agent.add_user_message(design_prompt)
-        
+
         with console.status("[bold cyan]Generating skill...[/bold cyan]"):
             final_design = await design_agent.run()
-        
+
         if not final_design or final_design.startswith("Error"):
             console.print(f"[red]Failed to generate skill: {final_design}[/red]")
             return
-        
+
         # Show final design for confirmation
         console.print(Panel(Markdown(final_design), title="📋 Generated Skill", border_style="green"))
-        
+
         if not IS_INTERACTIVE:
             console.print("[yellow]Non-interactive: auto-confirming skill creation[/yellow]")
             confirm = "y"
         else:
             confirm = Prompt.ask("\n[bold]Create this skill?[/bold]", choices=["y", "n"], default="y")
-        
+
         if confirm != "y":
             console.print("[yellow]Skill creation cancelled[/yellow]")
             return
-        
+
         # Extract and save skill
         self._save_skill_from_design(name, final_design)
 
@@ -699,12 +699,12 @@ Output ONLY the skill file content, nothing else."""
         """Save skill from agent-generated design."""
         skills_dir = self.config.project_root / ".agents" / "skills" / name
         skills_dir.mkdir(parents=True, exist_ok=True)
-        
+
         skill_file = skills_dir / "SKILL.md"
         if skill_file.exists():
             console.print(f"[red]Skill already exists: {name}[/red]")
             return
-        
+
         # Extract frontmatter and content from design
         # If design already has frontmatter, use it; otherwise wrap it
         if design.startswith("---"):
@@ -721,11 +721,11 @@ metadata:
 ---
 
 {design}"""
-        
+
         skill_file.write_text(content)
         console.print(f"[green]Created skill: {name}[/green]")
         console.print(f"Path: {skill_file}")
-        
+
         # Reload skills
         self.skill_loader.discover()
 
