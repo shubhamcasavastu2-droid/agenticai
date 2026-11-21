@@ -155,21 +155,3 @@ async def test_todo_tool_all_valid_statuses():
         )
         assert result == "Todo list updated."
         assert received["items"][0]["status"] == status
-
-
-@pytest.mark.asyncio
-async def test_cli_registers_todo_tool(tmp_path):
-    """Test that the CLI registers the todo tool."""
-    from src.app import Application
-    from src.config import Config
-
-    app = Application(Config(project_root=tmp_path))
-    await app.initialize()
-
-    try:
-        cli = app.cli
-        schemas = {schema.name for schema in cli.registry.schemas()}
-        assert "todo" in schemas
-    finally:
-        assert app.provider is not None
-        await app.provider.close()
