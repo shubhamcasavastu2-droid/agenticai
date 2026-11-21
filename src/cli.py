@@ -201,10 +201,9 @@ class CLI:
         # canonical task titles — never against gap descriptions, answers, or
         # generated tasks (prevents recursive gaps).
         gaps: list[dict[str, Any]] = []
-        for task in pending_tasks:
-            gap, suggestions = await self._detect_gap(objective, task)
-            if gap:
-                gaps.append({"task": task, "gap": gap, "suggestions": suggestions})
+        gap, suggestions = await self._detect_gap(objective)
+        if gap:
+            gaps.append({"gap": gap, "suggestions": suggestions})
 
         # Step 6: if no real gaps, continue with normalized input unchanged.
         if not gaps:
