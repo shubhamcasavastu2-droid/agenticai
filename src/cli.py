@@ -620,22 +620,31 @@ class CLI:
         return "Todo list updated."
 
     def _create_todos_from_normalized(self, normalized_input: str) -> None:
-        """Parse tasks from normalized input and show them as a todo list.
-        Only sets todos on first call; preserves agent-made status updates."""
+        """Parse tasks from normalized input and merge into the todo list.
+
+        Preserves existing agent-made status updates while adding any new tasks
+        that haven't been seen before. Shows the updated list every time.
+        """
         marker = "Tasks to achieve:"
         if marker not in normalized_input:
-            return
-        # Only create todos if we don't already have them (preserves agent updates)
-        if self.todos:
             return
         parsed: list[dict[str, str]] = []
         for line in normalized_input.split(marker, 1)[1].splitlines():
             line = line.strip()
             if line.startswith("- ") and line[2:].strip():
-                parsed.append({"title": line[2:].strip(), "status": "pending"})
+                title = line[2:].strip()
+                # Preserve existing status if we already have this task.
+                existing = next((t for t in self.todos if t["title"] == title), None)
+                parsed.append(
+                    {"title": title, "status": existing["status"] if existing else "pending"}
+                )
         if not parsed:
             return
-        self.todos = parsed
+        # Append any brand-new tasks; keep existing statuses for known ones.
+        existing_titles = {t["title"] for t in self.todos}
+        for item in parsed:
+            if item["title"] not in existing_titles:
+                self.todos.append(item)
         self._display_todos()
 
     def _display_todos(self) -> None:
@@ -652,7 +661,9 @@ class CLI:
 
         # Header line with progress
         progress_text = f"{done_count}/{total} complete"
-        if in_progress:
+        if done_count == total and total > 0:
+            progress_text += " | [todo.done]✅ All tasks completed[/todo.done]"
+        elif in_progress:
             progress_text += f" | [todo.in_progress]🔄 {in_progress[0]['title']}[/todo.in_progress]"
         elif pending:
             progress_text += f" | [todo.pending]⏳ Next: {pending[0]['title']}[/todo.pending]"
