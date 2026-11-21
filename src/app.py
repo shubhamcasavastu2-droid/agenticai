@@ -191,7 +191,6 @@ class Application:
                 normalized_input = await self.cli.normalize_input(user_input)
                 if normalized_input.startswith("Error:"):
                     continue
-                normalized_input = await self.cli.clarify_gaps(normalized_input)
                 self.cli._create_todos_from_normalized(normalized_input)
 
                 if self.completion_resolver is None:

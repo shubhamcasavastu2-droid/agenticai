@@ -146,68 +146,151 @@ class CLI:
             return None
         return user_input.strip()
 
+    # ------------------------------------------------------------------ normalization / gap clarification
+
     async def normalize_input(self, user_input: str) -> str:
-        """Normalize user input via the model provider. Returns the normalized text."""
+        """Normalize user input end-to-end.
+
+        1. Refurbish the raw request via the model provider.
+        2. Split the result into objective + tasks.
+        3. Detect gaps in each task and ask the user (with suggestions) via ask_user.
+        4. Take user input once all gaps are filled.
+        5. Preserve the original input, refurbish the requirement, build a task object,
+           and return it all as the normalized user input string.
+        """
         assert self.provider is not None
+        self.end_stream()
+
+        # Step 1: refurbish / normalize via the provider.
         response = await self.provider.complete(
             system=NORMALIZER_SYSTEM_PROMPT,
             messages=[Message.user(build_user_input_refurbish_prompt(user_input))],
             tools=[],
         )
-        normalized_input = "".join(
+        normalized_text = "".join(
             block.text for block in response.blocks if isinstance(block, TextBlock)
         )
         self.end_stream()
-        if normalized_input.startswith("Error:"):
-            self._ui.normalization_failed(normalized_input)
-            return normalized_input
-        self._ui.input_normalized(normalized_input)
-        return normalized_input
+        if normalized_text.startswith("Error:"):
+            self._ui.normalization_failed(normalized_text)
+            return normalized_text
 
-    async def clarify_gaps(self, normalized_input: str) -> str:
-        """Use the ask_user tool to ask about any gaps before the final process runs.
+        # Non-interactive: return the refurbished text as-is.
+        if not self.interactive:
+            self._ui.input_normalized(normalized_text)
+            return normalized_text
 
-        Runs a lightweight agent loop with only the ask_user tool available so the model can
-        identify missing/ambiguous information and prompt the user for each gap. Returns the
-        clarified request (or the original input when not interactive or no gaps remain).
+        # Step 2: split into objective + tasks.
+        objective, tasks = self._split_normalized(normalized_text)
+        if not tasks:
+            self._ui.input_normalized(normalized_text)
+            return normalized_text
+
+        # Step 3: detect gaps and ask the user (with suggestions) until all gaps filled.
+        clarified_tasks = await self._clarify_tasks(objective, tasks)
+
+        # Step 4: preserve original input + refurbish requirement + build task object.
+        final_text = self._assemble_normalized(user_input, objective, clarified_tasks)
+
+        self._ui.input_normalized(final_text)
+        return final_text
+
+    def _split_normalized(self, text: str) -> tuple[str, list[str]]:
+        """Split normalized text into (objective, [tasks])."""
+        objective = ""
+        tasks: list[str] = []
+        marker = "Tasks to achieve:"
+        if marker in text:
+            parts = text.split(marker, 1)
+            objective = parts[0].replace("User wants to achieve:", "").strip()
+            for line in parts[1].splitlines():
+                line = line.strip()
+                if line.startswith("- ") and line[2:].strip():
+                    tasks.append(line[2:].strip())
+        return objective, tasks
+
+    async def _clarify_tasks(self, objective: str, tasks: list[str]) -> list[dict[str, str]]:
+        """Detect gaps in each task and ask the user with suggestions via ask_user.
+
+        Returns a list of {"title": ..., "status": "pending"} dicts.
+        """
+        clarified: list[dict[str, str]] = []
+        for task in tasks:
+            gap, suggestions = await self._detect_gap(objective, task)
+            if not gap:
+                clarified.append({"title": task, "status": "pending"})
+                continue
+
+            suggestion_text = ", ".join(suggestions) if suggestions else "please clarify"
+            question = (
+                f"Task '{task}' seems incomplete or ambiguous: {gap}. "
+                f"Did you mean {suggestion_text}? Or provide more details."
+            )
+            answer = await self.ask_user(question, suggestions or None)
+            enriched = f"{task} — {answer}" if answer and answer.strip() else task
+            clarified.append({"title": enriched, "status": "pending"})
+        return clarified
+
+    async def _detect_gap(self, objective: str, task: str) -> tuple[str | None, list[str]]:
+        """Use the provider to detect gaps in a task and suggest clarifications.
+
+        Returns (gap_description_or_None, [suggestions]).
         """
         if not self.interactive or self.provider is None:
-            return normalized_input
+            return None, []
 
-        from .core.agent import AgentLoop
-        from .tools import ToolRegistry, create_ask_user_tool
-
-        clarify_prompt = (
-            "You are a clarification assistant. Your ONLY job is to identify missing information, "
-            "ambiguities, or gaps in the user's request and ask the user about them using the "
-            "ask_user tool. Do not execute the task. Do not call any tool other than ask_user.\n\n"
-            "Process:\n"
-            "1. Review the user's request below.\n"
-            "2. Identify gaps: missing details, ambiguous requirements, unclear scope, missing files/paths.\n"
-            "3. For each gap, call ask_user with a clear question (options when a fixed choice applies).\n"
-            "4. Wait for the user's answer, then ask about the next gap.\n"
-            "5. When no gaps remain, restate the complete clarified request preserving the "
-            "'Tasks to achieve:' list format, then stop.\n\n"
-            f"User request:\n{normalized_input}"
+        detect_prompt = (
+            "You review a single task from a user's request. Decide if the task has any "
+            "missing information, ambiguity, or unclear scope that must be resolved before "
+            "work can begin.\n\n"
+            f"Overall objective: {objective}\n"
+            f"Task to review: {task}\n\n"
+            "If the task is clear and complete, reply with exactly: COMPLETE\n"
+            "If there is a gap, reply with exactly this format:\n"
+            "GAP: <short description of what is missing or unclear>\n"
+            "SUGGEST: <option 1> | <option 2> | <option 3>\n"
+            "Provide up to three concrete suggestions. Be concise."
         )
+        try:
+            response = await self.provider.complete(
+                system="You are a precise gap-detection assistant. Reply only in the requested format.",
+                messages=[Message.user(detect_prompt)],
+                tools=[],
+            )
+            result = "".join(
+                block.text for block in response.blocks if isinstance(block, TextBlock)
+            ).strip()
+        except Exception:
+            return None, []
 
-        clarify_registry = ToolRegistry()
-        clarify_registry.register(create_ask_user_tool(self.ask_user))
+        if result == "COMPLETE" or not result:
+            return None, []
+        if result.startswith("GAP:"):
+            lines = result.splitlines()
+            gap = lines[0][len("GAP:"):].strip()
+            suggestions: list[str] = []
+            for line in lines[1:]:
+                if line.startswith("SUGGEST:"):
+                    raw = line[len("SUGGEST:"):]
+                    suggestions = [s.strip() for s in raw.split("|") if s.strip()]
+                    break
+            return gap, suggestions
+        return None, []
 
-        clarify_loop = AgentLoop(
-            provider=self.provider,
-            providers=self.providers,
-            registry=clarify_registry,
-            permission_gate=self.permission_gate,
-            system_prompt=clarify_prompt,
-            max_steps=10,
-            tool_callback=self._tool_callback,
-            reasoning_callback=self._reasoning_callback,
-            context_window_tokens=self.config.context_window_tokens,
-            max_completion_tokens=self.config.max_completion_tokens,
+    def _assemble_normalized(
+        self, original_input: str, objective: str, tasks: list[dict[str, str]]
+    ) -> str:
+        """Preserve original input, refurbish requirement, build task object.
+
+        Returns a string that keeps the original user input, the refurbished objective,
+        and the clarified task list so downstream todo creation still works.
+        """
+        task_lines = "\n".join(f"- {t['title']}" for t in tasks)
+        return (
+            f"Original user input: {original_input}\n\n"
+            f"User wants to achieve: {objective}\n"
+            f"Tasks to achieve:\n{task_lines}"
         )
-
-        return await clarify_loop.run()
 
     # ------------------------------------------------------------------ slash commands
 
