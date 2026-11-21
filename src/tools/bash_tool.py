@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from ..permissions import make_truncate_output, validate_path
-from ..shell_safety import find_denied_reason
+from ..security.permissions import make_truncate_output, validate_path
+from ..security.shell_safety import find_denied_reason
 from ..types import Tool, ToolSchema
 
 BASH_TOOL_SCHEMA = ToolSchema(

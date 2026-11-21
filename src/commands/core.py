@@ -6,7 +6,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from ..permissions import READ_ONLY_TOOLS
+from ..security.permissions import READ_ONLY_TOOLS
 
 if TYPE_CHECKING:
     from ..cli import CLI
@@ -37,23 +37,25 @@ async def clear_command(cli: CLI, args: list[str]) -> None:
         cli.agent_loop.clear_history()
     cli.permission_gate.reset()
     cli.session.new_session()
-    cli.console.print("[green]History cleared (new session started)[/green]")
+    cli.console.print("[status.success]History cleared (new session started)[/status.success]")
 
 
 async def model_command(cli: CLI, args: list[str]) -> None:
     if not args:
-        cli.console.print(f"Current model: [cyan]{cli.config.model}[/cyan]")
+        cli.console.print(f"[ui.subheader]Current model:[/ui.subheader]  [cyan]{cli.config.model}[/cyan]")
         if cli.config.review_model:
-            cli.console.print(f"Review model: [cyan]{cli.config.review_model}[/cyan]")
+            cli.console.print(
+                f"[ui.subheader]Review model:[/ui.subheader]  [cyan]{cli.config.review_model}[/cyan]"
+            )
         cli.console.print("Usage: /model <model-name>")
         return
     cli.config.model = args[0]
     await cli.rebuild_providers()
-    cli.console.print(f"[green]Model changed to: {args[0]}[/green]")
+    cli.console.print(f"[status.success]Model changed to:[/status.success] {args[0]}")
 
 
 async def exit_command(cli: CLI, args: list[str]) -> None:
-    cli.console.print("[yellow]Goodbye![/yellow]")
+    cli.console.print("[status.warning]Goodbye![/status.warning]")
     cli.running = False
     await cli.close()
 
@@ -62,9 +64,9 @@ async def resume_command(cli: CLI, args: list[str]) -> None:
     if args and args[0] == "list":
         sessions = cli.session.list_sessions()
         if not sessions:
-            cli.console.print("[yellow]No saved sessions[/yellow]")
+            cli.console.print("[status.warning]No saved sessions[/status.warning]")
             return
-        table = Table(title="Saved Sessions", border_style="blue")
+        table = Table(title="Saved Sessions", border_style="ui.border")
         table.add_column("Session", style="cyan")
         table.add_column("Messages", style="yellow", justify="right")
         table.add_column("Last updated", style="white")
@@ -74,17 +76,17 @@ async def resume_command(cli: CLI, args: list[str]) -> None:
         cli.console.print(table)
         return
     if cli.agent_loop is None:
-        cli.console.print("[red]Agent is not initialized[/red]")
+        cli.console.print("[status.error]Agent is not initialized[/status.error]")
         return
     try:
         messages = cli.session.load(args[0] if args else None)
     except FileNotFoundError as error:
-        cli.console.print(f"[red]{error}[/red]")
+        cli.console.print(f"[status.error]{error}[/status.error]")
         return
     cli.agent_loop.clear_history()
     cli.agent_loop.state.messages.extend(messages)
     cli.console.print(
-        f"[green]Resumed session {cli.session.session_id} ({len(messages)} messages)[/green]"
+        f"[status.success]Resumed session {cli.session.session_id} ({len(messages)} messages)[/status.success]"
     )
 
 

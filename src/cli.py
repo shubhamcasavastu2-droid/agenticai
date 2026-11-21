@@ -1,53 +1,34 @@
 from __future__ import annotations
 
-import asyncio
+import readline
 import sys
 from typing import Any
 
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
-from rich.text import Text
 
-from .agent import AgentLoop
-from .agents import AgentLoader
 from .commands import build_registry
-from .completion import CompletionResolver
 from .config import Config
+from .core.agent import CONTINUATION_STEPS, AgentLoop
+from .core.session import SessionStore
 from .logger import (
     log_command,
     log_error,
-    log_exception,
     log_info,
     log_permission,
     log_reasoning,
     log_tool_call,
-    setup_logging,
 )
-from .permissions import INTERACTIVE_TOOLS, READ_ONLY_TOOLS, PermissionGate
-from .provider import OpenAICompatibleProvider, ProviderAuthenticationError, ProviderTimeoutError
-from .session import SessionStore
-from .skills import SkillLoader
-from .system_prompt import (
-    build_system_prompt,
-    build_user_input_refurbish_prompt,
-    get_tool_descriptions,
+from .prompt.system_prompt import build_user_input_refurbish_prompt
+from .provider import (
+    OpenAICompatibleProvider,
 )
-from .tools import (
-    ToolRegistry,
-    create_ask_user_tool,
-    create_bash_tool,
-    create_edit_file_tool,
-    create_glob_tool,
-    create_grep_tool,
-    create_plan_tool,
-    create_read_file_tool,
-    create_write_file_tool,
-)
-
-console = Console()
+from .security.permissions import INTERACTIVE_TOOLS, READ_ONLY_TOOLS, PermissionGate
+from .tools import ToolRegistry
+from .types import Message, TextBlock
+from .ui import Display, console
 
 # Check if running in interactive mode (TTY)
 IS_INTERACTIVE = sys.stdin.isatty()
@@ -61,23 +42,29 @@ NORMALIZER_SYSTEM_PROMPT = (
 
 
 class CLI:
-    """Terminal front end: owns the providers, agent loops and session; slash commands live in
-    `src/commands/`."""
+    """Terminal front end: owns user input, permissions, display, and slash commands.
+    Initialized components (provider, agent loop, registry, etc.) are wired in by
+    `Application`. The agent loop execution lives in `Application.run()`."""
 
     def __init__(self, config: Config):
         self.config = config
         self.provider: OpenAICompatibleProvider | None = None
+        self.providers: dict[str, OpenAICompatibleProvider] = {}
         self.review_provider: OpenAICompatibleProvider | None = None
-        self.registry = ToolRegistry()
-        self.permission_gate = PermissionGate(config.project_root, default_auto_allow=READ_ONLY_TOOLS)
+        self.registry: ToolRegistry = ToolRegistry()
+        self.permission_gate = PermissionGate(
+            config.project_root, default_auto_allow=READ_ONLY_TOOLS
+        )
         self.agent_loop: AgentLoop | None = None
-        self.input_normalizer_loop: AgentLoop | None = None
-        self.completion_resolver: CompletionResolver | None = None
+        self.completion_resolver: Any = None
         self.commands = build_registry()
         self.session = SessionStore(config.sessions_path)
         self.running = True
         self.todos: list[dict[str, str]] = []
         self._stream_open = False
+        self.skill_loader: Any = None
+        self.agent_loader: Any = None
+        self._setup_readline()
 
     # ------------------------------------------------------------------ properties
 
@@ -87,198 +74,125 @@ class CLI:
         return console
 
     @property
+    def _ui(self) -> Display:
+        """Lazy UI display using the current module-level console (allows test monkeypatching)."""
+        return Display(console=console)
+
+    @property
     def interactive(self) -> bool:
         return IS_INTERACTIVE
 
-    # ------------------------------------------------------------------ setup
+    # ------------------------------------------------------------------ readline autocomplete
 
-    def _make_provider(self, model: str, stream: bool) -> OpenAICompatibleProvider:
-        return OpenAICompatibleProvider(
-            base_url=self.config.base_url,
-            api_key=self.config.api_key,
-            model=model,
-            timeout=self.config.request_timeout_seconds,
-            max_completion_tokens=self.config.max_completion_tokens,
-            max_retries=self.config.max_retries,
-            stream=stream,
-            on_text_delta=self.on_text_delta if stream else None,
-        )
+    def _setup_readline(self) -> None:
+        """Configure readline tab completion for slash commands."""
+        try:
+            readline.set_completer_delims(" \t\n;")
+            readline.parse_and_bind("tab: complete")
+            readline.set_completer(self._slash_completer)
+        except (ImportError, AttributeError):
+            # readline not available on this platform (e.g. Windows without pyreadline)
+            pass
 
-    async def rebuild_providers(self) -> None:
-        """(Re)create the agent and review providers from the current config."""
-        await self.close()
-        self.provider = self._make_provider(self.config.model, self.config.stream)
-        # The reviewer returns JSON, so it never streams to the terminal.
-        self.review_provider = self._make_provider(self.config.review_model or self.config.model, False)
-        for loop in (self.agent_loop, self.input_normalizer_loop):
-            if loop:
-                loop.provider = self.provider
-        if self.completion_resolver:
-            self.completion_resolver.provider = self.provider
-            self.completion_resolver.review_provider = self.review_provider
+    def _slash_completer(self, text: str, state: int) -> str | None:
+        """Tab-complete slash commands when user types '/'.
 
-    async def close(self) -> None:
-        for provider in (self.provider, self.review_provider):
-            if provider:
-                await provider.close()
+        Returns the state-th matching command, or None when no more matches.
+        """
+        if not text.startswith("/"):
+            return None
+        matches = [
+            f"/{cmd.name}"
+            for cmd in self.commands.all()
+            if cmd.name.startswith(text.lstrip("/"))
+        ]
+        if state < len(matches):
+            return matches[state]
+        return None
 
-    async def initialize(self) -> None:
-        await self.rebuild_providers()
+    # ------------------------------------------------------------------ user input
+
+    async def prompt_user(self) -> str | None:
+        """Prompt the user for input. Returns None on interrupt/EOF."""
+        try:
+            user_input = self._ui.prompt(">>")
+        except (KeyboardInterrupt, EOFError):
+            self.end_stream()
+            self.console.print("\n[yellow]Interrupted. Type /exit to quit.[/yellow]")
+            return None
+        return user_input.strip()
+
+    async def normalize_input(self, user_input: str) -> str:
+        """Normalize user input via the model provider. Returns the normalized text."""
         assert self.provider is not None
-        self.completion_resolver = CompletionResolver(
-            self.provider,
-            max_attempts=self.config.max_completion_attempts,
-            review_provider=self.review_provider,
-            enabled=self.config.completion_review,
+        response = await self.provider.complete(
+            system=NORMALIZER_SYSTEM_PROMPT,
+            messages=[Message.user(build_user_input_refurbish_prompt(user_input))],
+            tools=[],
         )
-
-        root = self.config.project_root
-        max_output = self.config.max_output_size
-        self.registry.register(create_read_file_tool(root, max_output))
-        self.registry.register(create_write_file_tool(root))
-        self.registry.register(create_edit_file_tool(root))
-        self.registry.register(create_glob_tool(root, max_output))
-        self.registry.register(create_grep_tool(root, max_output))
-        self.registry.register(create_bash_tool(root, max_output))
-        self.registry.register(create_ask_user_tool(self.ask_user))
-        self.registry.register(create_plan_tool(self.present_plan))
-
-        self.skill_loader = SkillLoader(root / ".agents" / "skills")
-        self.skill_loader.discover()
-        self.agent_loader = AgentLoader(root / ".agents" / "agents", root / "agents" / "agents.md")
-        self.agent_loader.discover()
-
-        system_prompt = build_system_prompt(
-            root,
-            get_tool_descriptions(self.registry.all()),
-            root / "AGENT.md",
-            self.skill_loader.format_for_prompt(),
-            self.agent_loader.format_for_prompt(),
+        normalized_input = "".join(
+            block.text for block in response.blocks if isinstance(block, TextBlock)
         )
-        self.agent_loop = AgentLoop(
-            provider=self.provider,
-            registry=self.registry,
-            permission_gate=self.permission_gate,
-            system_prompt=system_prompt,
-            max_steps=self.config.max_steps,
-            permission_callback=self._permission_callback,
-            reasoning_callback=self._reasoning_callback,
-            tool_callback=self._tool_callback,
-            clarification_callback=self._clarify_empty_response,
-            context_window_tokens=self.config.context_window_tokens,
-            max_completion_tokens=self.config.max_completion_tokens,
-        )
-        self.input_normalizer_loop = AgentLoop(
-            provider=self.provider,
-            registry=ToolRegistry(),
-            permission_gate=PermissionGate(),
-            system_prompt=NORMALIZER_SYSTEM_PROMPT,
-            max_steps=3,
-            reasoning_callback=self._reasoning_callback,
-            clarification_callback=self._clarify_empty_response,
-            context_window_tokens=self.config.context_window_tokens,
-            max_completion_tokens=self.config.max_completion_tokens,
-        )
-
-        self.console.print("[green]Agent initialized[/green]")
-        self.console.print(f"Model: [cyan]{self.config.model}[/cyan]")
-        if self.config.review_model:
-            self.console.print(f"Review model: [cyan]{self.config.review_model}[/cyan]")
-        self.console.print(f"Max output tokens per response: [cyan]{self.config.max_completion_tokens}[/cyan]")
-        self.console.print(f"Context window budget: [cyan]{self.config.context_window_tokens}[/cyan]")
-        self.console.print(f"Project: [cyan]{root}[/cyan]")
-        if self.skill_loader.all():
-            self.console.print(f"Skills loaded: [cyan]{len(self.skill_loader.all())}[/cyan]")
-        if self.agent_loader.all():
-            self.console.print(f"Agents loaded: [cyan]{len(self.agent_loader.all())}[/cyan]")
-        self.console.print("Type [bold]/help[/bold] for commands\n")
-
-    # ------------------------------------------------------------------ main loop
-
-    async def run(self) -> None:
-        await self.initialize()
-        while self.running:
-            try:
-                user_input = Prompt.ask("[bold blue]>>[/bold blue]")
-                await self.handle_input(user_input.strip())
-            except (KeyboardInterrupt, EOFError):
-                self.end_stream()
-                self.console.print("\n[yellow]Interrupted. Type /exit to quit.[/yellow]")
-            except ProviderAuthenticationError as e:
-                self.end_stream()
-                self.console.print(f"[red]Authentication error: {e}[/red]")
-                log_error(str(e))
-            except ProviderTimeoutError as e:
-                self.end_stream()
-                self.console.print(
-                    "[red]Model request timed out.[/red] "
-                    "The model server did not respond within the configured timeout. "
-                    "Check that the model server is running and responsive, or increase "
-                    "AGENTIC_REQUEST_TIMEOUT_SECONDS (current: "
-                    f"{self.config.request_timeout_seconds}s)."
-                )
-                log_error(str(e))
-            except Exception as e:
-                self.end_stream()
-                detail = str(e).strip() or repr(e)
-                self.console.print(f"[red]Error ({type(e).__name__}): {detail}[/red]")
-                log_exception(e)
-            finally:
-                self._save_session()
-
-    async def handle_input(self, user_input: str) -> None:
-        if not user_input:
-            return
-        if user_input.startswith("/"):
-            await self.handle_slash_command(user_input)
-            return
-        if not (self.agent_loop and self.input_normalizer_loop):
-            return
-
-        self.input_normalizer_loop.add_user_message(build_user_input_refurbish_prompt(user_input))
-        normalized_input = await self.input_normalizer_loop.run()
-        self.input_normalizer_loop.clear_history()
         self.end_stream()
         if normalized_input.startswith("Error:"):
-            self.console.print(
-                Panel(Markdown(normalized_input), title="Input normalization failed", border_style="red")
-            )
-            return
-        self.console.print(
-            Panel(Markdown(normalized_input), title="Normalized input sent to coding agent", border_style="cyan")
-        )
-        self.agent_loop.add_user_message(normalized_input)
-        self._create_todos_from_normalized(normalized_input)
-        if self.completion_resolver is None:
-            raise RuntimeError("Completion resolver is not initialized")
-        completion = await self.completion_resolver.run(
-            self.agent_loop,
-            original_request=user_input,
-            normalized_request=normalized_input,
-        )
-        self.end_stream()
+            self._ui.normalization_failed(normalized_input)
+            return normalized_input
+        self._ui.input_normalized(normalized_input)
+        return normalized_input
 
-        if completion.complete:
-            self.console.print(Panel(Markdown(completion.response), title="Assistant", border_style="green"))
-        else:
-            status = (
-                f"Completion not verified after {completion.attempts} attempts. "
-                f"Remaining issue: {completion.findings or 'The reviewer could not confirm completion.'}"
-            )
-            self.console.print(
-                Panel(
-                    Markdown(f"{completion.response}\n\n**{status}**"),
-                    title="Task not confirmed",
-                    border_style="yellow",
-                )
-            )
+    async def clarify_gaps(self, normalized_input: str) -> str:
+        """Use the ask_user tool to ask about any gaps before the final process runs.
+
+        Runs a lightweight agent loop with only the ask_user tool available so the model can
+        identify missing/ambiguous information and prompt the user for each gap. Returns the
+        clarified request (or the original input when not interactive or no gaps remain).
+        """
+        if not self.interactive or self.provider is None:
+            return normalized_input
+
+        from .core.agent import AgentLoop
+        from .tools import ToolRegistry, create_ask_user_tool
+
+        clarify_prompt = (
+            "You are a clarification assistant. Your ONLY job is to identify missing information, "
+            "ambiguities, or gaps in the user's request and ask the user about them using the "
+            "ask_user tool. Do not execute the task. Do not call any tool other than ask_user.\n\n"
+            "Process:\n"
+            "1. Review the user's request below.\n"
+            "2. Identify gaps: missing details, ambiguous requirements, unclear scope, missing files/paths.\n"
+            "3. For each gap, call ask_user with a clear question (options when a fixed choice applies).\n"
+            "4. Wait for the user's answer, then ask about the next gap.\n"
+            "5. When no gaps remain, restate the complete clarified request preserving the "
+            "'Tasks to achieve:' list format, then stop.\n\n"
+            f"User request:\n{normalized_input}"
+        )
+
+        clarify_registry = ToolRegistry()
+        clarify_registry.register(create_ask_user_tool(self.ask_user))
+
+        clarify_loop = AgentLoop(
+            provider=self.provider,
+            providers=self.providers,
+            registry=clarify_registry,
+            permission_gate=self.permission_gate,
+            system_prompt=clarify_prompt,
+            max_steps=10,
+            tool_callback=self._tool_callback,
+            reasoning_callback=self._reasoning_callback,
+            context_window_tokens=self.config.context_window_tokens,
+            max_completion_tokens=self.config.max_completion_tokens,
+        )
+
+        return await clarify_loop.run()
+
+    # ------------------------------------------------------------------ slash commands
 
     async def handle_slash_command(self, cmd: str) -> None:
         parts = cmd.split()
         log_command(cmd)
         command = self.commands.get(parts[0])
         if command is None:
-            self.console.print(f"[red]Unknown command: {parts[0]}[/red]")
+            self._ui.console.print(f"[status.error]Unknown command:[/status.error] {parts[0]}")
             help_command = self.commands.get("help")
             if help_command:
                 await help_command.handler(self, [])
@@ -298,34 +212,25 @@ class CLI:
 
     async def on_text_delta(self, text: str) -> None:
         self._stream_open = True
-        self.console.print(Text(text, style="dim"), end="")
+        self._ui.stream_delta(text)
 
     def end_stream(self) -> None:
         """Terminate a partially streamed line before printing panels or prompts."""
-        if self._stream_open:
-            self.console.print()
-            self._stream_open = False
+        self._stream_open = self._ui.end_stream(self._stream_open)
 
     async def on_reasoning(self, reasoning: str) -> None:
         self.end_stream()
-        self.console.print(Panel(Markdown(reasoning), title="🤔 Reasoning", border_style="magenta", style="dim"))
+        self._ui.console.print(
+            Panel(Markdown(reasoning), title="🤔 Reasoning", border_style="magenta", style="dim")
+        )
         log_reasoning(reasoning)
 
     async def on_tool(self, tool_name: str, args: dict[str, Any], output: str, is_error: bool) -> None:
         self.end_stream()
         if output == "started":
-            table = Table(title=f"▶️  Running: {tool_name}", border_style="cyan")
-            table.add_column("Parameter", style="cyan")
-            table.add_column("Value", style="white")
-            for key, value in args.items():
-                table.add_row(key, str(value)[:300])
-            self.console.print(table)
+            self._ui.tool_table(tool_name, args, is_error=False)
         else:
-            title = f"❌ {tool_name} (error)" if is_error else f"✅ {tool_name} (done)"
-            display_output = output[:500]
-            if len(output) > 500:
-                display_output += f"\n... (truncated, {len(output)} total chars)"
-            self.console.print(Panel(Text(display_output), title=title, border_style="red" if is_error else "green"))
+            self._ui.tool_result_panel(tool_name, output, is_error=is_error)
         log_tool_call(tool_name, args, output, is_error)
 
     # Names used by AgentLoop wiring and existing tests.
@@ -350,38 +255,35 @@ class CLI:
             return True, None
 
         if not self.interactive:
-            self.console.print(
-                f"[yellow]Non-interactive: denying {tool_name} "
-                "(use /permission allow <tool> auto to pre-allow)[/yellow]"
+            self._ui.warning(
+                f"Non-interactive: denying {tool_name} "
+                "(use /permission allow <tool> auto to pre-allow)"
             )
             log_permission(tool_name, False, "Non-interactive mode: tool not pre-allowed")
             return False, "Non-interactive mode: tool not pre-allowed"
 
-        table = Table(title=f"Tool Call: {tool_name}", border_style="yellow")
-        table.add_column("Parameter", style="cyan")
-        table.add_column("Value", style="white")
-        for key, value in args.items():
-            table.add_row(key, str(value)[:200])
-        self.console.print(table)
-        self.console.print("\n[y] Allow once  [a] Allow always  [u] Auto-allow  [n] Deny  [d] Deny always")
+        self._ui.tool_table(tool_name, args, is_error=False)
+        self._ui.console.print(
+            "\n[y] Allow once  [a] Allow always  [u] Auto-allow  [n] Deny  [d] Deny always"
+        )
 
-        choice = Prompt.ask("Permission", choices=["y", "a", "u", "n", "d"], default="n")
+        choice = self._ui.prompt("Permission", choices=["y", "a", "u", "n", "d"], default="n")
         if choice == "y":
             log_permission(tool_name, True, "Allowed once")
             return True, None
         if choice == "a":
             gate.allow_always(tool_name)
-            self.console.print(f"[green]Always allowed: {tool_name}[/green]")
+            self._ui.success(f"Always allowed: {tool_name}")
             log_permission(tool_name, True, "Always allowed")
             return True, None
         if choice == "u":
             gate.allow_auto(tool_name)
-            self.console.print(f"[green]Auto-allowed: {tool_name} (no prompts this session)[/green]")
+            self._ui.success(f"Auto-allowed: {tool_name} (no prompts this session)")
             log_permission(tool_name, True, "Auto-allowed")
             return True, None
         if choice == "d":
             gate.deny(tool_name)
-            self.console.print(f"[red]Always denied: {tool_name}[/red]")
+            self._ui.error(f"Always denied: {tool_name}")
             log_permission(tool_name, False, "Denied always")
             return False, "User denied permission permanently"
         log_permission(tool_name, False, "Denied once")
@@ -392,8 +294,8 @@ class CLI:
         if not self.interactive:
             raise RuntimeError("ask_user requires an interactive terminal")
         if options:
-            return Prompt.ask(f"[bold cyan]{question}[/bold cyan]", choices=options)
-        return Prompt.ask(f"[bold cyan]{question}[/bold cyan]")
+            return self._ui.prompt(question, choices=options)
+        return self._ui.prompt(question)
 
     async def _clarify_empty_response(self, question: str) -> str:
         return await self.ask_user(question, None)
@@ -402,60 +304,102 @@ class CLI:
         self.end_stream()
         if not self.interactive:
             raise RuntimeError("plan approval requires an interactive terminal")
-        plan_markdown = f"{summary}\n\n## Steps\n"
-        plan_markdown += "\n".join(f"{index}. {step}" for index, step in enumerate(steps, 1))
-        if risks:
-            plan_markdown += "\n\n## Risks and assumptions\n" + "\n".join(f"- {risk}" for risk in risks)
-        self.console.print(Panel(Markdown(plan_markdown), title=f"Plan: {title}", border_style="cyan"))
+        self._ui.plan_panel(title, summary, steps, risks)
 
-        decision = Prompt.ask("Plan decision", choices=["approve", "revise", "reject"], default="reject")
+        decision = self._ui.prompt("Plan decision", choices=["approve", "revise", "reject"], default="reject")
         if decision == "approve":
             return "APPROVED: You may proceed with this plan."
         if decision == "revise":
-            feedback = Prompt.ask("What should change?", default="Please revise the plan")
+            feedback = self._ui.prompt("What should change?", default="Please revise the plan")
             return f"REVISION REQUESTED: {feedback}"
         return "REJECTED: Do not proceed with implementation."
 
+    async def _ask_continue(self, current_max_steps: int) -> bool:
+        """Ask the user whether to continue for more steps after max steps are reached."""
+        self.end_stream()
+        if not self.interactive:
+            return False
+        choice = self._ui.prompt(
+            f"Maximum steps ({current_max_steps}) reached. Continue for {CONTINUATION_STEPS} more steps?",
+            choices=["y", "n"],
+            default="n",
+        )
+        return choice == "y"
+
     # ------------------------------------------------------------------ todo list
 
+    def _todo_callback(self, action: str, items: list[dict[str, str]]) -> str:
+        """Handle todo tool calls: create or update todo items and display progress."""
+        if action == "create":
+            self.todos = [{"title": item["title"], "status": item["status"]} for item in items]
+        elif action == "update":
+            for item in items:
+                title = item["title"]
+                status = item["status"]
+                for todo in self.todos:
+                    if todo["title"] == title:
+                        todo["status"] = status
+                        break
+                else:
+                    self.todos.append({"title": title, "status": status})
+        self._display_todos()
+        return "Todo list updated."
+
     def _create_todos_from_normalized(self, normalized_input: str) -> None:
-        """Parse tasks from normalized input and show them as a todo list."""
-        self.todos = []
+        """Parse tasks from normalized input and show them as a todo list.
+        Only sets todos on first call; preserves agent-made status updates."""
         marker = "Tasks to achieve:"
         if marker not in normalized_input:
             return
+        # Only create todos if we don't already have them (preserves agent updates)
+        if self.todos:
+            return
+        parsed: list[dict[str, str]] = []
         for line in normalized_input.split(marker, 1)[1].splitlines():
             line = line.strip()
             if line.startswith("- ") and line[2:].strip():
-                self.todos.append({"title": line[2:].strip(), "status": "pending"})
+                parsed.append({"title": line[2:].strip(), "status": "pending"})
+        if not parsed:
+            return
+        self.todos = parsed
+        self._display_todos()
+
+    def _display_todos(self) -> None:
+        """Render the todo list with Rich status badges. Shows current in-progress step."""
         if not self.todos:
             return
-        table = Table(title="Todo List", border_style="blue")
+        # Build a compact single-line summary + detailed table
+        pending = [t for t in self.todos if t["status"] == "pending"]
+        in_progress = [t for t in self.todos if t["status"] == "in_progress"]
+        done = [t for t in self.todos if t["status"] == "done"]
+
+        total = len(self.todos)
+        done_count = len(done)
+
+        # Header line with progress
+        progress_text = f"{done_count}/{total} complete"
+        if in_progress:
+            progress_text += f" | [todo.in_progress]🔄 {in_progress[0]['title']}[/todo.in_progress]"
+        elif pending:
+            progress_text += f" | [todo.pending]⏳ Next: {pending[0]['title']}[/todo.pending]"
+        else:
+            progress_text += " | [todo.done]✅ All done[/todo.done]"
+
+        self._ui.console.print(f"[ui.subheader]Todo:[/ui.subheader]  {progress_text}")
+
+        # Detailed table
+        table = Table(title="Todo List", border_style="ui.border", show_header=True)
         table.add_column("#", style="cyan", width=4)
-        table.add_column("Status", style="yellow", width=10)
+        table.add_column("Status", style="yellow", width=16)
         table.add_column("Task", style="white")
-        for index, todo in enumerate(self.todos, 1):
-            table.add_row(str(index), "✅ Done" if todo["status"] == "done" else "⏳ Pending", todo["title"])
-        self.console.print(table)
-
-
-async def main() -> None:
-    config = Config.from_env()
-    setup_logging(config.log_dir)
-    cli = CLI(config)
-    try:
-        await cli.run()
-    finally:
-        await cli.close()
-
-
-def main_sync() -> None:
-    """Synchronous entry point for console script."""
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
-
-
-if __name__ == "__main__":
-    main_sync()
+        for index, item in enumerate(self.todos, 1):
+            status = item.get("status", "pending")
+            title = item.get("title", "")
+            if status == "in_progress":
+                status_text = "[todo.in_progress]🔄 In Progress[/todo.in_progress]"
+            elif status == "done":
+                status_text = "[todo.done]✅ Done[/todo.done]"
+            else:
+                status_text = "[todo.pending]⏳ Pending[/todo.pending]"
+            table.add_row(str(index), status_text, title)
+        self._ui.console.print(table)

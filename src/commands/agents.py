@@ -7,7 +7,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 if TYPE_CHECKING:
-    from ..agents import Agent
+    from ..capabilities.agents import Agent
     from ..cli import CLI
     from . import CommandRegistry
 
@@ -23,15 +23,15 @@ Agents are defined in `.agents/agents/<name>.md` (YAML frontmatter) or `agents/a
 def show_agents(cli: CLI) -> None:
     agents = cli.agent_loader.all()
     if not agents:
-        cli.console.print("[yellow]No agents loaded[/yellow]")
+        cli._ui.warning("No agents loaded")
         return
-    table = Table(title="Loaded Agents", border_style="blue")
+    table = Table(title="Loaded Agents", border_style="ui.border")
     table.add_column("Name", style="cyan")
     table.add_column("Description", style="white")
     table.add_column("Model", style="yellow")
     for agent in agents:
         table.add_row(agent.name, agent.description or "No description", agent.model)
-    cli.console.print(table)
+    cli._ui.console.print(table)
 
 
 def show_agent_detail(cli: CLI, agent: Agent) -> None:
@@ -42,7 +42,7 @@ def show_agent_detail(cli: CLI, agent: Agent) -> None:
         content += f"**Permissions**: {agent.permissions}\n"
     if agent.system_prompt:
         content += f"\n**System Prompt**:\n{agent.system_prompt[:300]}..."
-    cli.console.print(Panel(Markdown(content), title=f"Agent: {agent.name}", border_style="cyan"))
+    cli._ui.console.print(Panel(Markdown(content), title=f"Agent: {agent.name}", border_style="cyan"))
 
 
 async def agents_command(cli: CLI, args: list[str]) -> None:
@@ -51,16 +51,16 @@ async def agents_command(cli: CLI, args: list[str]) -> None:
         show_agents(cli)
     elif subcommand == "show":
         if len(args) < 2:
-            cli.console.print("[red]Usage: /agents show <agent-name>[/red]")
+            cli._ui.error("Usage: /agents show <agent-name>")
             return
         agent = cli.agent_loader.get(args[1])
         if agent:
             show_agent_detail(cli, agent)
         else:
-            cli.console.print(f"[red]Agent not found: {args[1]}[/red]")
+            cli._ui.error(f"Agent not found: {args[1]}")
     else:
-        cli.console.print(f"[red]Unknown agents subcommand: {subcommand}[/red]")
-        cli.console.print(Panel(Markdown(AGENTS_HELP), title="Agents Help", border_style="cyan"))
+        cli._ui.error(f"Unknown agents subcommand: {subcommand}")
+        cli._ui.console.print(Panel(Markdown(AGENTS_HELP), title="Agents Help", border_style="cyan"))
 
 
 def register(registry: CommandRegistry) -> None:

@@ -23,7 +23,7 @@ PERMISSION_HELP = """
 
 
 def show_permissions(cli: CLI) -> None:
-    table = Table(title="Tool Permissions", border_style="blue")
+    table = Table(title="Tool Permissions", border_style="ui.border")
     table.add_column("Tool", style="cyan")
     table.add_column("Default", style="yellow")
     table.add_column("Current", style="green")
@@ -32,7 +32,7 @@ def show_permissions(cli: CLI) -> None:
     for tool in cli.registry.all():
         default = "auto" if tool.name in gate.default_auto_allow else "prompt"
         table.add_row(tool.name, default, gate.mode(tool.name), tool.description)
-    cli.console.print(table)
+    cli._ui.console.print(table)
 
 
 async def permission_command(cli: CLI, args: list[str]) -> None:
@@ -45,37 +45,39 @@ async def permission_command(cli: CLI, args: list[str]) -> None:
         return
     if subcommand == "reset":
         gate.reset()
-        cli.console.print("[green]All permissions reset to defaults[/green]")
+        cli._ui.success("All permissions reset to defaults")
         return
     if subcommand not in {"allow", "deny"}:
-        cli.console.print(f"[red]Unknown subcommand: {subcommand}[/red]")
-        cli.console.print(Panel(Markdown(PERMISSION_HELP), title="Permission Help", border_style="blue"))
+        cli._ui.console.print(f"[status.error]Unknown subcommand: {subcommand}[/status.error]")
+        cli._ui.console.print(Panel(Markdown(PERMISSION_HELP), title="Permission Help", border_style="blue"))
         return
     if len(args) < 2:
-        cli.console.print(f"[red]Usage: /permission {subcommand} <tool-name> [...][/red]")
+        cli._ui.console.print(f"[status.error]Usage: /permission {subcommand} <tool-name> [...]\"[/status.error]")
         return
     tool_name = args[1]
     if tool_name not in tool_names:
-        cli.console.print(f"[red]Unknown tool: {tool_name}. Available: {', '.join(tool_names)}[/red]")
+        cli._ui.console.print(
+            f"[status.error]Unknown tool: {tool_name}. Available: {', '.join(tool_names)}[/status.error]"
+        )
         return
     mode = args[2].lower() if len(args) > 2 else ""
 
     if subcommand == "allow":
         if mode == "always":
             gate.allow_always(tool_name)
-            cli.console.print(f"[green]Permission set: {tool_name} = always[/green]")
+            cli._ui.success(f"Permission set: {tool_name} = always")
         elif mode == "auto":
             gate.allow_auto(tool_name)
-            cli.console.print(f"[green]Permission set: {tool_name} = auto (no prompts)[/green]")
+            cli._ui.success(f"Permission set: {tool_name} = auto (no prompts)")
         else:
             gate.clear(tool_name)
-            cli.console.print(f"[green]Permission set: {tool_name} = prompt (will ask each time)[/green]")
+            cli._ui.success(f"Permission set: {tool_name} = prompt (will ask each time)")
     elif mode == "always":
         gate.deny(tool_name)
-        cli.console.print(f"[red]Permission set: {tool_name} = denied always[/red]")
+        cli._ui.error(f"Permission set: {tool_name} = denied always")
     else:
         gate.clear(tool_name)
-        cli.console.print(f"[yellow]Permission set: {tool_name} = prompt (will ask each time)[/yellow]")
+        cli._ui.warning(f"Permission set: {tool_name} = prompt (will ask each time)")
 
 
 def register(registry: CommandRegistry) -> None:

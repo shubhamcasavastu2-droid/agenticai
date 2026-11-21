@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from src.logger import redact
-from src.permissions import READ_ONLY_TOOLS, PermissionGate, check_deny_list
-from src.shell_safety import find_denied_reason
+from src.security.permissions import READ_ONLY_TOOLS, PermissionGate, check_deny_list
+from src.security.shell_safety import find_denied_reason
 
 
 @pytest.mark.parametrize(

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..permissions import make_truncate_output, validate_path
+from ..security.permissions import make_truncate_output, validate_path
 from ..types import Tool, ToolSchema
 
 READ_FILE_SCHEMA = ToolSchema(

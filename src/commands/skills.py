@@ -5,12 +5,11 @@ from typing import TYPE_CHECKING
 
 from rich.markdown import Markdown
 from rich.panel import Panel
-from rich.prompt import Prompt
 from rich.table import Table
 
-from ..agent import AgentLoop
-from ..permissions import READ_ONLY_TOOLS, PermissionGate
-from ..skills import Skill
+from ..capabilities.skills import Skill
+from ..core.agent import AgentLoop
+from ..security.permissions import READ_ONLY_TOOLS, PermissionGate
 from ..tools import ToolRegistry
 
 if TYPE_CHECKING:
@@ -48,15 +47,15 @@ def strip_code_fence(text: str) -> str:
 def show_skills(cli: CLI) -> None:
     skills = cli.skill_loader.all()
     if not skills:
-        cli.console.print("[yellow]No skills loaded[/yellow]")
+        cli._ui.warning("No skills loaded")
         return
-    table = Table(title="Loaded Skills", border_style="blue")
+    table = Table(title="Loaded Skills", border_style="ui.border")
     table.add_column("Name", style="cyan")
     table.add_column("Description", style="white")
     table.add_column("Version", style="yellow")
     for skill in skills:
         table.add_row(skill.name, skill.description, str(skill.metadata.get("version", "1.0")))
-    cli.console.print(table)
+    cli._ui.console.print(table)
 
 
 def show_skill_detail(cli: CLI, skill: Skill) -> None:
@@ -65,12 +64,12 @@ def show_skill_detail(cli: CLI, skill: Skill) -> None:
         content += f"**Metadata**: {skill.metadata}\n"
     if skill.content:
         content += f"\n---\n{skill.content}"
-    cli.console.print(Panel(Markdown(content), title=f"Skill: {skill.name}", border_style="cyan"))
+    cli._ui.console.print(Panel(Markdown(content), title=f"Skill: {skill.name}", border_style="cyan"))
 
 
 def _collect_answers(cli: CLI, description: str) -> dict[str, str]:
     if not cli.interactive:
-        cli.console.print("[yellow]Non-interactive mode: using description to generate skill[/yellow]")
+        cli._ui.warning("Non-interactive mode: using description to generate skill")
         return {
             "trigger": description,
             "inputs": "User request",
@@ -81,9 +80,9 @@ def _collect_answers(cli: CLI, description: str) -> dict[str, str]:
         }
     answers: dict[str, str] = {}
     for key, question in QUESTIONS:
-        answer = Prompt.ask(f"[bold cyan]{question}[/bold cyan]")
+        answer = cli._ui.prompt(question)
         if answer.lower() in ("done", "finish", "complete", "skip"):
-            cli.console.print("[yellow]Skipping remaining questions...[/yellow]")
+            cli._ui.warning("Skipping remaining questions...")
             break
         answers[key] = answer
     return answers
@@ -115,18 +114,18 @@ Output ONLY the skill file content (no code fences), nothing else."""
 
 async def create_skill(cli: CLI, name: str, description: str) -> None:
     if not SKILL_NAME.match(name):
-        cli.console.print("[red]Invalid skill name: use lowercase letters, digits and hyphens (max 64)[/red]")
+        cli._ui.error("Invalid skill name: use lowercase letters, digits and hyphens (max 64)")
         return
     skill_dir = cli.config.project_root / ".agents" / "skills" / name
     if (skill_dir / "SKILL.md").exists():
-        cli.console.print(f"[red]Skill already exists: {name}[/red]")
+        cli._ui.error(f"Skill already exists: {name}")
         return
     if cli.provider is None:
         raise RuntimeError("Provider is not initialized")
 
-    cli.console.print(f"[cyan]Designing skill: {name}[/cyan]")
+    cli._ui.info(f"Designing skill: {name}")
     if description:
-        cli.console.print(f"Initial idea: {description}\n")
+        cli._ui.console.print(f"Initial idea: {description}\n")
     prompt = _design_prompt(name, _collect_answers(cli, description))
 
     # The designer only needs to read existing skills; it never writes files or runs commands.
@@ -151,7 +150,7 @@ async def create_skill(cli: CLI, name: str, description: str) -> None:
     cli.end_stream()
 
     if not design or design.startswith("Error"):
-        cli.console.print(f"[red]Failed to generate skill: {design}[/red]")
+        cli._ui.error(f"Failed to generate skill: {design}")
         return
     content = strip_code_fence(design)
     if not content.startswith("---"):
@@ -159,19 +158,20 @@ async def create_skill(cli: CLI, name: str, description: str) -> None:
             f"---\nname: {name}\ndescription: {description or 'Auto-generated skill'}\nlicense: MIT\n"
             'metadata:\n  version: "1.0"\n  skill-author: Agent Designer\n---\n\n' + content
         )
-    cli.console.print(Panel(Markdown(content), title="📋 Generated Skill", border_style="green"))
+    cli._ui.console.print(Panel(Markdown(content), title="📋 Generated Skill", border_style="green"))
 
     if cli.interactive:
-        if Prompt.ask("\n[bold]Create this skill?[/bold]", choices=["y", "n"], default="y") != "y":
-            cli.console.print("[yellow]Skill creation cancelled[/yellow]")
+        if cli._ui.prompt("Create this skill?", choices=["y", "n"], default="y") != "y":
+            cli._ui.warning("Skill creation cancelled")
             return
     else:
-        cli.console.print("[yellow]Non-interactive: auto-confirming skill creation[/yellow]")
+        cli._ui.warning("Non-interactive: auto-confirming skill creation")
 
     skill_dir.mkdir(parents=True, exist_ok=True)
     skill_file = skill_dir / "SKILL.md"
     skill_file.write_text(content, encoding="utf-8")
-    cli.console.print(f"[green]Created skill: {name}[/green]\nPath: {skill_file}")
+    cli._ui.success(f"Created skill: {name}")
+    cli._ui.console.print(f"Path: {skill_file}")
     cli.skill_loader.discover()
 
 
@@ -181,21 +181,21 @@ async def skills_command(cli: CLI, args: list[str]) -> None:
         show_skills(cli)
     elif subcommand == "show":
         if len(args) < 2:
-            cli.console.print("[red]Usage: /skills show <skill-name>[/red]")
+            cli._ui.error("Usage: /skills show <skill-name>")
             return
         skill = cli.skill_loader.get(args[1])
         if skill:
             show_skill_detail(cli, skill)
         else:
-            cli.console.print(f"[red]Skill not found: {args[1]}[/red]")
+            cli._ui.error(f"Skill not found: {args[1]}")
     elif subcommand == "create":
         if len(args) < 2:
-            cli.console.print("[red]Usage: /skills create <skill-name> [description][/red]")
+            cli._ui.error("Usage: /skills create <skill-name> [description]")
             return
         await create_skill(cli, args[1], " ".join(args[2:]).strip("\"'"))
     else:
-        cli.console.print(f"[red]Unknown skills subcommand: {subcommand}[/red]")
-        cli.console.print(Panel(Markdown(SKILLS_HELP), title="Skills Help", border_style="cyan"))
+        cli._ui.error(f"Unknown skills subcommand: {subcommand}")
+        cli._ui.console.print(Panel(Markdown(SKILLS_HELP), title="Skills Help", border_style="cyan"))
 
 
 def register(registry: CommandRegistry) -> None:

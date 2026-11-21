@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..permissions import make_truncate_output, validate_path
+from ..security.permissions import make_truncate_output, validate_path
 from ..types import Tool, ToolSchema
 
 GREP_SCHEMA = ToolSchema(

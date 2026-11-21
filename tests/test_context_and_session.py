@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from src.agent import AgentLoop
 from src.commands.skills import strip_code_fence
-from src.completion import CompletionResolver
-from src.context import ContextManager
-from src.permissions import PermissionGate
-from src.session import SessionStore
+from src.core.agent import AgentLoop
+from src.core.completion import CompletionResolver
+from src.core.context import ContextManager
+from src.core.session import SessionStore
+from src.security.permissions import PermissionGate
 from src.tools.registry import ToolRegistry
 from src.types import (
     Message,
@@ -104,7 +104,14 @@ async def test_agent_compacts_history_before_calling_model():
     gate = PermissionGate()
     gate.allow_auto("read_file")
     agent = AgentLoop(
-        provider, registry, gate, "sys", max_steps=20, context_window_tokens=6000, max_completion_tokens=1000
+        provider,
+        {"agent": provider},
+        registry,
+        gate,
+        "sys",
+        max_steps=20,
+        context_window_tokens=6000,
+        max_completion_tokens=1000,
     )
     agent.add_user_message("read everything")
 
@@ -129,7 +136,7 @@ async def test_agent_returns_malformed_arguments_to_model_as_error():
             ModelResponse(blocks=[TextBlock(text="fixed")], stop_reason=StopReason.END_TURN),
         ]
     )
-    agent = AgentLoop(provider, registry, PermissionGate(), "sys")
+    agent = AgentLoop(provider, {"agent": provider}, registry, PermissionGate(), "sys")
     agent.add_user_message("go")
 
     assert await agent.run() == "fixed"
@@ -147,10 +154,11 @@ async def test_agent_detects_alternating_tool_call_loop():
         ModelResponse(blocks=[ToolCall(id=str(i), name="ab"[i % 2], arguments={})], stop_reason=StopReason.TOOL_USE)
         for i in range(10)
     ]
+    provider = ScriptedProvider(responses)
     gate = PermissionGate()
     gate.allow_auto("a")
     gate.allow_auto("b")
-    agent = AgentLoop(ScriptedProvider(responses), registry, gate, "sys", max_steps=10)
+    agent = AgentLoop(provider, {"agent": provider}, registry, gate, "sys", max_steps=10)
     agent.add_user_message("go")
 
     result = await agent.run()
@@ -161,7 +169,7 @@ async def test_agent_detects_alternating_tool_call_loop():
 @pytest.mark.asyncio
 async def test_completion_review_can_be_disabled():
     provider = ScriptedProvider([ModelResponse(blocks=[TextBlock(text="answer")], stop_reason=StopReason.END_TURN)])
-    agent = AgentLoop(provider, ToolRegistry(), PermissionGate(), "sys")
+    agent = AgentLoop(provider, {"agent": provider}, ToolRegistry(), PermissionGate(), "sys")
     agent.add_user_message("q")
     result = await CompletionResolver(provider, enabled=False).run(agent, "q", "q")
     assert result.complete and result.response == "answer" and result.attempts == 1
@@ -206,25 +214,26 @@ async def test_cli_slash_commands_dispatch_through_registry(tmp_path, monkeypatc
     from rich.console import Console
 
     import src.cli as cli_module
-    from src.cli import CLI
+    from src.app import Application
     from src.config import Config
 
     output = StringIO()
     monkeypatch.setattr(cli_module, "console", Console(file=output, force_terminal=False, width=200))
-    cli = CLI(Config(project_root=tmp_path))
-    await cli.initialize()
+    app = Application(Config(project_root=tmp_path))
+    cli = app.cli
+    await app.initialize()
     try:
-        await cli.handle_input("/permission deny write_file always")
+        await cli.handle_slash_command("/permission deny write_file always")
         assert cli.permission_gate.mode("write_file") == "denied"
         assert cli.permission_gate.mode("read_file") == "auto"
 
-        await cli.handle_input("/nope")
+        await cli.handle_slash_command("/nope")
         text = output.getvalue()
         assert "Unknown command: /nope" in text
         assert "/resume" in text  # help is generated from the registry
 
-        await cli.handle_input("/skills create ../escape")
+        await cli.handle_slash_command("/skills create ../escape")
         assert "Invalid skill name" in output.getvalue()
         assert not (tmp_path.parent / "escape").exists()
     finally:
-        await cli.close()
+        await app.close()

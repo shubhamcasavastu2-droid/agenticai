@@ -8,6 +8,7 @@ from .grep_tool import create_grep_tool
 from .plan_tool import create_plan_tool
 from .read_file import create_read_file_tool
 from .registry import ToolRegistry, create_tool_schema
+from .todo_tool import create_todo_tool
 from .write_file import create_write_file_tool
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "create_bash_tool",
     "create_ask_user_tool",
     "create_plan_tool",
+    "create_todo_tool",
 ]

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.agent import AgentLoop
-from src.permissions import PermissionGate
+from src.core.agent import AgentLoop
+from src.security.permissions import PermissionGate
 from src.tools.registry import ToolRegistry
 from src.types import (
     ModelResponse,
@@ -62,7 +62,7 @@ async def test_agent_retries_empty_response_after_tool_call():
     registry.register(record_tool)
     permission_gate = PermissionGate()
     permission_gate.allow_auto("record")
-    agent = AgentLoop(provider, registry, permission_gate, "test", max_steps=4)
+    agent = AgentLoop(provider, {"agent": provider}, registry, permission_gate, "test", max_steps=4)
     agent.add_user_message("Create a document")
 
     result = await agent.run()
@@ -80,7 +80,7 @@ async def test_agent_reports_repeated_empty_responses():
             ModelResponse(blocks=[], stop_reason=StopReason.END_TURN),
         ]
     )
-    agent = AgentLoop(provider, ToolRegistry(), PermissionGate(), "test", max_steps=2)
+    agent = AgentLoop(provider, {"agent": provider}, ToolRegistry(), PermissionGate(), "test", max_steps=2)
     agent.add_user_message("Do something")
 
     result = await agent.run()
@@ -92,7 +92,7 @@ async def test_agent_reports_repeated_empty_responses():
 
 @pytest.mark.asyncio
 async def test_agent_logs_complete_empty_response(monkeypatch):
-    import src.agent as agent_module
+    import src.core.agent as agent_module
 
     logged_messages: list[str] = []
     monkeypatch.setattr(agent_module, "log_warning", logged_messages.append)
@@ -106,7 +106,7 @@ async def test_agent_logs_complete_empty_response(monkeypatch):
             ModelResponse(blocks=[TextBlock(text="Recovered")], stop_reason=StopReason.END_TURN),
         ]
     )
-    agent = AgentLoop(provider, ToolRegistry(), PermissionGate(), "test", max_steps=2)
+    agent = AgentLoop(provider, {"agent": provider}, ToolRegistry(), PermissionGate(), "test", max_steps=2)
 
     result = await agent.run()
 
@@ -119,7 +119,7 @@ async def test_agent_logs_complete_empty_response(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_agent_compares_context_and_continues_after_max_tokens(monkeypatch):
-    import src.agent as agent_module
+    import src.core.agent as agent_module
 
     context_logs: list[str] = []
     monkeypatch.setattr(agent_module, "log_warning", context_logs.append)
@@ -140,6 +140,7 @@ async def test_agent_compares_context_and_continues_after_max_tokens(monkeypatch
     )
     agent = AgentLoop(
         provider,
+        {"agent": provider},
         ToolRegistry(),
         PermissionGate(),
         "test",
@@ -170,7 +171,7 @@ async def test_agent_never_returns_partial_max_token_response_as_final():
             )
         ]
     )
-    agent = AgentLoop(provider, ToolRegistry(), PermissionGate(), "test", max_steps=1)
+    agent = AgentLoop(provider, {"agent": provider}, ToolRegistry(), PermissionGate(), "test", max_steps=1)
     agent.add_user_message("Complete this task")
 
     result = await agent.run()
@@ -182,7 +183,7 @@ async def test_agent_never_returns_partial_max_token_response_as_final():
 
 @pytest.mark.asyncio
 async def test_agent_stops_after_repeated_output_limit_responses(monkeypatch):
-    import src.agent as agent_module
+    import src.core.agent as agent_module
 
     warnings: list[str] = []
     monkeypatch.setattr(agent_module, "log_warning", warnings.append)
@@ -198,6 +199,7 @@ async def test_agent_stops_after_repeated_output_limit_responses(monkeypatch):
     )
     agent = AgentLoop(
         provider,
+        {"agent": provider},
         ToolRegistry(),
         PermissionGate(),
         "test",
@@ -233,6 +235,7 @@ async def test_agent_asks_for_details_after_retried_empty_response():
 
     agent = AgentLoop(
         provider,
+        {"agent": provider},
         ToolRegistry(),
         PermissionGate(),
         "test",
@@ -265,6 +268,7 @@ async def test_agent_reports_when_clarification_is_not_interactive():
 
     agent = AgentLoop(
         provider,
+        {"agent": provider},
         ToolRegistry(),
         PermissionGate(),
         "test",

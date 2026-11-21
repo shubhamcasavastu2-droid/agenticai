@@ -54,7 +54,8 @@ Analyze the user's input.
 - Split the objective into actionable tasks.
 - Do not invent requirements or assumptions.
 - Keep the output concise.
-
+- load agents or skill match with requirements and return the skill name if matched, otherwise skip
+- plan each action and perfrom one by one
 User input:
 {user_input}
 

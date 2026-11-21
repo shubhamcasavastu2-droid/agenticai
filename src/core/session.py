@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .types import Block, Message, ReasoningBlock, Role, TextBlock, ToolCall, ToolResult
+from ..types import Block, Message, ReasoningBlock, Role, TextBlock, ToolCall, ToolResult
 
 _BLOCK_TYPES: dict[str, type] = {
     "text": TextBlock,

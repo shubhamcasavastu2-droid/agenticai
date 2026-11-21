@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from rich.prompt import Prompt
-
 if TYPE_CHECKING:
     from ..cli import CLI
     from . import CommandRegistry
@@ -12,30 +10,50 @@ if TYPE_CHECKING:
 async def plan_command(cli: CLI, args: list[str]) -> None:
     """Create a plan by hand and present it for approval."""
     if not cli.interactive:
-        cli.console.print("[yellow]/plan requires an interactive terminal[/yellow]")
+        cli._ui.warning("/plan requires an interactive terminal")
         return
-    title = Prompt.ask("[bold cyan]Plan title[/bold cyan]")
-    summary = Prompt.ask("[bold cyan]Summary[/bold cyan]")
-    steps = [s.strip() for s in Prompt.ask("[bold cyan]Steps (comma-separated)[/bold cyan]").split(",") if s.strip()]
+    title = cli._ui.prompt("Plan title")
+    summary = cli._ui.prompt("Summary")
+    steps = [s.strip() for s in cli._ui.prompt("Steps (comma-separated)").split(",") if s.strip()]
     if not steps:
-        cli.console.print("[red]At least one step is required[/red]")
+        cli._ui.error("At least one step is required")
         return
-    risks_input = Prompt.ask("[bold cyan]Risks (comma-separated, optional)[/bold cyan]", default="")
+    risks_input = cli._ui.prompt("Risks (comma-separated, optional)", default="")
     risks = [r.strip() for r in risks_input.split(",") if r.strip()]
     result = await cli.present_plan(title, summary, steps, risks)
-    cli.console.print(f"[green]{result}[/green]")
+    cli._ui.success(result)
 
 
 async def ask_command(cli: CLI, args: list[str]) -> None:
-    """Ask a question, optionally with fixed choices."""
+    """Ask a question, optionally with fixed choices.
+
+    Uses the ask_user tool from the registry for schema validation,
+    then prompts the user through cli.ask_user().
+    """
     if not cli.interactive:
-        cli.console.print("[yellow]/ask requires an interactive terminal[/yellow]")
+        cli._ui.warning("/ask requires an interactive terminal")
         return
-    question = Prompt.ask("[bold cyan]Question[/bold cyan]")
-    options_input = Prompt.ask("[bold cyan]Options (comma-separated, optional)[/bold cyan]", default="")
+
+    # Associate with the ask_user tool: verify it exists in the registry
+    tool = cli.registry.get("ask_user")
+    if tool is None:
+        cli._ui.error("ask_user tool not available in registry")
+        return
+
+    question = cli._ui.prompt("Question")
+    options_input = cli._ui.prompt("Options (comma-separated, optional)", default="")
     options = [o.strip() for o in options_input.split(",") if o.strip()] or None
+
+    # Validate against ask_user tool schema
+    if not question.strip():
+        cli._ui.error("question cannot be empty")
+        return
+    if options is not None and not options:
+        cli._ui.error("options cannot be empty when provided")
+        return
+
     answer = await cli.ask_user(question, options)
-    cli.console.print(f"[green]Answer: {answer}[/green]")
+    cli._ui.success(f"Answer: {answer}")
 
 
 def register(registry: CommandRegistry) -> None:

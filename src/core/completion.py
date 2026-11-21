@@ -4,10 +4,10 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from ..logger import log_info, log_warning
+from ..provider import Provider, ProviderTimeoutError
+from ..types import Message, ReasoningBlock, TextBlock, ToolCall, ToolResult
 from .agent import AgentLoop
-from .logger import log_info, log_warning
-from .provider import Provider, ProviderTimeoutError
-from .types import Message, ReasoningBlock, TextBlock, ToolCall, ToolResult
 
 COMPLETION_REVIEW_PROMPT = """You are a completion reviewer for a coding agent.
 Decide whether the user's original request has been fulfilled, based only on the
