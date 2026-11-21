@@ -1,3 +1,18 @@
+"""
+Completion Review System for Agentic CLI.
+
+This module implements an optional second-pass review mechanism that uses a separate
+model (or the same model) to verify whether the agent has actually completed the
+user's request. The reviewer analyzes the conversation trace and tool outputs to
+determine if all deliverables are met.
+
+Key features:
+- Structured JSON output from reviewer
+- Configurable retry attempts with feedback injection
+- Separate review model support
+- Trace truncation to fit context window
+"""
+
 from __future__ import annotations
 
 import json

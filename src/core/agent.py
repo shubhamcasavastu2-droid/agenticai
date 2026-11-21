@@ -1,3 +1,16 @@
+"""
+Agent Loop Implementation for Agentic CLI.
+
+This module implements the core agent loop that orchestrates the interaction between
+the language model, tools, and the user. It handles:
+- Step-by-step execution with max step limits
+- Loop detection and prevention
+- Context window management and compaction
+- Model output token limit handling with continuation
+- Empty response retry and clarification callbacks
+- Tool execution with permission gates
+"""
+
 from __future__ import annotations
 
 import json

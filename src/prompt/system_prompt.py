@@ -1,3 +1,17 @@
+"""
+System Prompt Builder for Agentic CLI.
+
+This module constructs the system prompt sent to the language model, including:
+- Environment information (working directory, OS, date, shell)
+- Tool descriptions with JSON schemas
+- Core rules and style guidelines
+- Optional AGENT.md project instructions loading
+- Input normalization/refurbishment prompts
+
+The system prompt is built dynamically at runtime to reflect the current
+environment and available tools.
+"""
+
 from __future__ import annotations
 
 import os

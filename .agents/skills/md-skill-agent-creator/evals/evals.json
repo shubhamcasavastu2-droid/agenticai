@@ -1,0 +1,23 @@
+{
+  "skill_name": "md-skill-agent-creator",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Create a new skill called code-reviewer that reviews code quality when the user asks to review code. It should use read_file and grep tools, with workflow: read file → grep issues → report findings.",
+      "expected_output": "The skill should work inside the main context window: ask for justification, build a system prompt for code-reviewer from the justified input, create backend/.agents/skills/code-reviewer/SKILL.md with YAML frontmatter, reload skill_loader.discover(), rebuild the main system prompt via build_system_prompt so the new skill is in the agent's context window, and confirm it is loaded and usable in the main conversation.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Update the existing diagram skill to add mermaid chart generation support.",
+      "expected_output": "The skill should find backend/.agents/skills/diagram/SKILL.md exists, ask for the new justification (mermaid support), update the skill file, reload into the main context window, and confirm the updated diagram skill is now available to the agent in the main context.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Create an agent called documentation-agent that writes technical docs using write_file and edit_file tools.",
+      "expected_output": "The skill should ask for agent justification (name, description, model, system_prompt, tools, permissions), create backend/.agents/agents/documentation-agent.md with frontmatter, reload agent_loader.discover(), rebuild the main system prompt so the new agent is in the context window, and confirm it is loaded and usable in the main agent context.",
+      "files": []
+    }
+  ]
+}

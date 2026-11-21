@@ -38,7 +38,8 @@ select = ["E", "F", "I", "UP", "W"]
 
 [tool.ruff.lint.per-file-ignores]
 # Prompt templates are prose; wrapping them would change the text sent to the model.
-"src/system_prompt.py" = ["E501"]
+"src/prompt/system_prompt.py" = ["E501"]
+"src/config.py" = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

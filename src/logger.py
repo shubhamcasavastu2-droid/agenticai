@@ -1,3 +1,17 @@
+"""
+Logging infrastructure for Agentic CLI.
+
+This module provides:
+- Rotating file logger with configurable size and backup count
+- Secret redaction for API keys, tokens, passwords, and authorization headers
+- Console logging at WARNING level by default
+- Structured log messages for context usage, permissions, and errors
+
+The logger is configured with a NullHandler by default so importing this module
+does not create log files. Call setup_logging() from the CLI entry point to
+initialize file and console handlers.
+"""
+
 from __future__ import annotations
 
 import logging

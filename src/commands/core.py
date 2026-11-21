@@ -1,3 +1,15 @@
+"""
+Core Slash Commands for Agentic CLI.
+
+This module implements the fundamental slash commands:
+- /help: Display available commands and tools
+- /clear: Clear conversation history and start new session
+- /model: Show or change the current model
+- /exit: Exit the CLI
+
+These commands are always available and form the basic CLI interface.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

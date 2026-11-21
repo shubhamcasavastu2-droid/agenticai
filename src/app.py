@@ -1,3 +1,17 @@
+"""
+Application Layer for Agentic CLI.
+
+This module provides the Application class that orchestrates the entire system:
+- Initializes all components (provider, CLI, tools, permissions, completion resolver)
+- Registers built-in tools (read_file, write_file, edit_file, glob, grep, bash, ask_user, plan, todo)
+- Loads skills and agents from the capabilities system
+- Builds the system prompt with tool descriptions
+- Runs the main agent loop with completion review
+- Handles provider authentication and timeout errors
+
+The Application separates initialization concerns from the CLI's terminal/UI concerns.
+"""
+
 from __future__ import annotations
 
 from .capabilities.agents import AgentLoader

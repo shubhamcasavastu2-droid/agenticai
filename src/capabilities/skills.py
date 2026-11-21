@@ -1,3 +1,21 @@
+"""
+Skills System for Agentic CLI.
+
+This module implements the skills loading mechanism. Skills are directories containing
+a SKILL.md file with YAML frontmatter that define reusable prompt snippets, tool
+configurations, or behavioral modifications for the agent.
+
+Skills can be loaded and referenced in:
+- System prompt injection
+- Slash commands (/skills)
+- Agent definitions
+
+Structure:
+.agents/skills/<skill_name>/
+  SKILL.md          # Required: YAML frontmatter + markdown content
+  (optional files)  # Additional resources
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

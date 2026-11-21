@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic CLI - Architecture Diagram</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 40px;
+        }
+        header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+        .diagram-wrapper {
+            padding: 40px;
+            overflow-x: auto;
+        }
+        .layer {
+            margin-bottom: 40px;
+        }
+        .layer:last-child {
+            margin-bottom: 0;
+        }
+        .layer-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .layer-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+        }
+        .layer-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        .layer-description {
+            color: #666;
+            font-size: 14px;
+            margin-left: 28px;
+        }
+        .components-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .component {
+            background: #fafafa;
+            border: 1px solid #e8e8e8;
+            border-radius: 10px;
+            padding: 20px;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        .component:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+            border-color: #d0d0d0;
+        }
+        .component::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            border-radius: 10px 10px 0 0;
+        }
+        .component.core::before { background: #667eea; }
+        .component.provider::before { background: #764ba2; }
+        .component.tools::before { background: #f093fb; }
+        .component.ui::before { background: #4facfe; }
+        .component.config::before { background: #43e97b; }
+        .component.infra::before { background: #fa709a; }
+        .component-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #222;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .component-icon {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .component.core .component-icon { background: #e8eaff; color: #667eea; }
+        .component.provider .component-icon { background: #f0e8ff; color: #764ba2; }
+        .component.tools .component-icon { background: #fce8ff; color: #f093fb; }
+        .component.ui .component-icon { background: #e8f4ff; color: #4facfe; }
+        .component.config .component-icon { background: #e8ffe8; color: #43e97b; }
+        .component.infra .component-icon { background: #ffe8f0; color: #fa709a; }
+        .component-description {
+            font-size: 13px;
+            color: #666;
+            line-height: 1.5;
+            margin-bottom: 12px;
+        }
+        .component-files {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        .file-tag {
+            background: #f0f0f0;
+            color: #555;
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Menlo', monospace;
+        }
+        .flow-section {
+            margin-top: 40px;
+            padding-top: 40px;
+            border-top: 2px solid #e0e0e0;
+        }
+        .flow-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        .flow-diagram {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            align-items: center;
+        }
+        .flow-step {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            background: #fafafa;
+            border: 1px solid #e8e8e8;
+            border-radius: 10px;
+            padding: 16px 24px;
+            min-width: 600px;
+            max-width: 100%;
+        }
+        .flow-step-number {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        .flow-step-content {
+            flex: 1;
+        }
+        .flow-step-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #222;
+            margin-bottom: 4px;
+        }
+        .flow-step-desc {
+            font-size: 13px;
+            color: #666;
+        }
+        .flow-arrow {
+            width: 2px;
+            height: 24px;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+            margin: 0 16px;
+        }
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            padding: 20px;
+            background: #fafafa;
+            border-top: 1px solid #e8e8e8;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #555;
+        }
+        .legend-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+        }
+        @media (max-width: 768px) {
+            .diagram-wrapper {
+                padding: 20px;
+            }
+            .flow-step {
+                min-width: 0;
+            }
+            header {
+                padding: 20px;
+            }
+            header h1 {
+                font-size: 22px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Agentic CLI Architecture</h1>
+            <p>Provider-agnostic agentic coding tool with tool registry, context management, and completion review</p>
+        </header>
+        
+        <div class="diagram-wrapper">
+            <!-- Layer 1: Core Agent Loop -->
+            <div class="layer">
+                <div class="layer-header">
+                    <div class="layer-color" style="background: #667eea;"></div>
+                    <span class="layer-title">Core Agent Loop</span>
+                </div>
+                <div class="layer-description">Central orchestration layer managing the agent lifecycle, step execution, and loop guards</div>
+                <div class="components-grid">
+                    <div class="component core">
+                        <div class="component-name">
+                            <span class="component-icon">⟳</span>
+                            AgentLoop (agent.py)
+                        </div>
+                        <div class="component-description">Main agent execution loop with max steps, loop detection (A-B-A-B cycles), output token limit handling, and continuation callbacks</div>
+                        <div class="component-files">
+                            <span class="file-tag">agent.py</span>
+                            <span class="file-tag">AgentState</span>
+                            <span class="file-tag">ContextManager</span>
+                        </div>
+                    </div>
+                    <div class="component core">
+                        <div class="component-name">
+                            <span class="component-icon">📝</span>
+                            CompletionResolver (completion.py)
+                        </div>
+                        <div class="component-description">Optional completion review using a separate model to verify task completion, with retry logic and findings tracking</div>
+                        <div class="component-files">
+                            <span class="file-tag">completion.py</span>
+                            <span class="file-tag">max_attempts</span>
+                            <span class="file-tag">review_provider</span>
+                        </div>
+                    </div>
+                    <div class="component core">
+                        <div class="component-name">
+                            <span class="component-icon">🔄</span>
+                            ContextManager (context.py)
+                        </div>
+                        <div class="component-description">Context window estimation, compaction (eliding old tool outputs, dropping oldest turns), token calibration from provider usage</div>
+                        <div class="component-files">
+                            <span class="file-tag">context.py</span>
+                            <span class="file-tag">compact()</span>
+                            <span class="file-tag">calibrate()</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 2: Provider Adapters -->
+            <div class="layer">
+                <div class="layer-header">
+                    <div class="layer-color" style="background: #764ba2;"></div>
+                    <span class="layer-title">Provider Adapters</span>
+                </div>
+                <div class="layer-description">OpenAI-compatible HTTP client with streaming, retries, and multi-provider support</div>
+                <div class="components-grid">
+                    <div class="component provider">
+                        <div class="component-name">
+                            <span class="component-icon">🌐</span>
+                            OpenAICompatibleProvider (provider.py)
+                        </div>
+                        <div class="component-description">Async HTTP client for any OpenAI-compatible API (NVIDIA NIM, Ollama, OpenAI, Anthropic, OpenRouter) with exponential backoff, Retry-After support, and streaming</div>
+                        <div class="component-files">
+                            <span class="file-tag">provider.py</span>
+                            <span class="file-tag">httpx.AsyncClient</span>
+                            <span class="file-tag">stream=True</span>
+                        </div>
+                    </div>
+                    <div class="component provider">
+                        <div class="component-name">
+                            <span class="component-icon">🔌</span>
+                            Provider Interface
+                        </div>
+                        <div class="component-description">Abstract base class defining the complete() contract for provider implementations</div>
+                        <div class="component-files">
+                            <span class="file-tag">provider.py</span>
+                            <span class="file-tag">Protocol</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 3: Tools Registry -->
+            <div class="layer">
+                <div class="layer-header">
+                    <div class="layer-color" style="background: #f093fb;"></div>
+                    <span class="layer-title">Tools Registry</span>
+                </div>
+                <div class="layer-description">8 built-in tools with auto-allow for read-only, permission gate for write/exec</div>
+                <div class="components-grid">
+                    <div class="component tools">
+                        <div class="component-name">
+                            <span class="component-icon">📖</span>
+                            read_file
+                        </div>
+                        <div class="component-description">Read files with offset/limit, confined to project root</div>
+                        <div class="component-files">
+                            <span class="file-tag">tools/read_file.py</span>
+                            <span class="file-tag">auto-allow</span>
+                        </div>
+                    </div>
+                    <div class="component tools">
+                        <div class="component-name">
+                            <span class="component-icon">✏️</span>
+                            write_file
+                        </div>
+                        <div class="component-description">Create files with parent directories, asks permission</div>
+                        <div class="component-files">
+                            <span class="file-tag">tools/write_file.py</span>
+                            <span class="file-tag">asks permission</span>
+                        </div>
+                    </div>
+                    <div class="component tools">
+                        <div class="component-name">
+                            <span class="component-icon">🔧</span>
+                            edit_file
+                        </div>
+                        <div class="component-description">Exact string replacement with uniqueness validation</div>
+                        <div class="component-files">
+                            <span class="file-tag">tools/edit_file.py</span>
+                            <span class="file-tag">asks permission</span>
+                        </div>
+                    </div>
+                    <div class="component tools">
+                        <div class="component-name">
+                            <span class="component-icon">🔍</span>
+                            glob / grep
+                        </div>
+                        <div class="component-description">File pattern matching and regex search within project</div>
+                        <div class="component-files">
+                            <span class="file-tag">tools/glob_tool.py</span>
+                            <span class="file-tag">tools/grep_tool.py</span>
+                            <span class="file-tag">auto-allow</span>
+                        </div>
+                    </div>
+                    <div class="component tools">
+                        <div class="component-name">
+                            <span class="component-icon">💻</span>
+                            bash
+                        </div>
+                        <div class="component-description">Shell command execution with safety rules (blocks sudo, rm -rf, curl|sh, etc.)</div>
+                        <div class="component-files">
+                            <span class="file-tag">tools/bash_tool.py</span>
+                            <span class="file-tag">shell_safety.py</span>
+                            <span class="file-tag">asks permission</span>
+                        </div>
+                    </div>
+                    <div class="component tools">
+                        <div class="component-name">
+                            <span class="component-icon">❓</span>
+                            ask_user / plan / todo
+                        </div>
+                        <div class="component-description">Interactive clarification, plan presentation, and todo management</div>
+                        <div class="component-files">
+                            <span class="file-tag">tools/ask_tool.py</span>
+                            <span class="file-tag">tools/plan_tool.py</span>
+                            <span class="file-tag">tools/todo_tool.py</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 4: UI & Commands -->
+            <div class="layer">
+                <div class="layer-header">
+                    <div class="layer-color" style="background: #4facfe;"></div>
+                    <span class="layer-title">UI & Slash Commands</span>
+                </div>
+                <div class="layer-description">Rich-based terminal UI with slash command registry</div>
+                <div class="components-grid">
+                    <div class="component ui">
+                        <div class="component-name">
+                            <span class="component-icon">🖥️</span>
+                            CLI (cli.py)
+                        </div>
+                        <div class="component-description">REPL with streaming output, permission callbacks, session management, and command dispatch</div>
+                        <div class="component-files">
+                            <span class="file-tag">cli.py</span>
+                            <span class="file-tag">Display</span>
+                            <span class="file-tag">rich.Console</span>
+                        </div>
+                    </div>
+                    <div class="component ui">
+                        <div class="component-name">
+                            <span class="component-icon">⚡</span>
+                            Slash Commands (commands/)
+                        </div>
+                        <div class="component-description">/help, /clear, /model, /resume, /permission, /skills, /agents, /plan, /ask, /exit</div>
+                        <div class="component-files">
+                            <span class="file-tag">commands/core.py</span>
+                            <span class="file-tag">commands/permission.py</span>
+                            <span class="file-tag">commands/skills.py</span>
+                            <span class="file-tag">commands/agents.py</span>
+                            <span class="file-tag">commands/interaction.py</span>
+                        </div>
+                    </div>
+                    <div class="component ui">
+                        <div class="component-name">
+                            <span class="component-icon">🎨</span>
+                            Display & Theme (ui/)
+                        </div>
+                        <div class="component-description">Centralized UI components: panels, markdown, syntax highlighting, welcome header</div>
+                        <div class="component-files">
+                            <span class="file-tag">ui/display.py</span>
+                            <span class="file-tag">ui/theme.py</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 5: Configuration & Safety -->
+            <div class="layer">
+                <div class="layer-header">
+                    <div class="layer-color" style="background: #43e97b;"></div>
+                    <span class="layer-title">Configuration & Safety</span>
+                </div>
+                <div class="layer-description">Environment-based config, path validation, and shell command safety</div>
+                <div class="components-grid">
+                    <div class="component config">
+                        <div class="component-name">
+                            <span class="component-icon">⚙️</span>
+                            Config (config.py)
+                        </div>
+                        <div class="component-description">Loads from .env file or environment variables with validation and defaults</div>
+                        <div class="component-files">
+                            <span class="file-tag">config.py</span>
+                            <span class="file-tag">pydantic.BaseSettings</span>
+                            <span class="file-tag">python-dotenv</span>
+                        </div>
+                    </div>
+                    <div class="component config">
+                        <div class="component-name">
+                            <span class="component-icon">🛡️</span>
+                            PermissionGate (permissions.py)
+                        </div>
+                        <div class="component-description">Path validation (project root confinement), auto-allow/deny modes, session-scoped permissions</div>
+                        <div class="component-files">
+                            <span class="file-tag">permissions.py</span>
+                            <span class="file-tag">READ_ONLY_TOOLS</span>
+                        </div>
+                    </div>
+                    <div class="component config">
+                        <div class="component-name">
+                            <span class="component-icon">🔒</span>
+                            Shell Safety (shell_safety.py)
+                        </div>
+                        <div class="component-description">Tokenizes bash commands, blocks dangerous patterns (sudo, rm -rf, fork bombs, dd, mkfs, etc.) per sub-command</div>
+                        <div class="component-files">
+                            <span class="file-tag">shell_safety.py</span>
+                            <span class="file-tag">shlex</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Layer 6: Infrastructure -->
+            <div class="layer">
+                <div class="layer-header">
+                    <div class="layer-color" style="background: #fa709a;"></div>
+                    <span class="layer-title">Infrastructure</span>
+                </div>
+                <div class="layer-description">Logging, sessions, skills/agents loading, and system prompt building</div>
+                <div class="components-grid">
+                    <div class="component infra">
+                        <div class="component-name">
+                            <span class="component-icon">📋</span>
+                            Logger (logger.py)
+                        </div>
+                        <div class="component-description">Rotating file logs with secret redaction in tool args/output</div>
+                        <div class="component-files">
+                            <span class="file-tag">logger.py</span>
+                            <span class="file-tag">logging.handlers</span>
+                        </div>
+                    </div>
+                    <div class="component infra">
+                        <div class="component-name">
+                            <span class="component-icon">💾</span>
+                            Session Store (session.py)
+                        </div>
+                        <div class="component-description">JSONL session transcripts with /resume support</div>
+                        <div class="component-files">
+                            <span class="file-tag">session.py</span>
+                            <span class="file-tag">SessionStore</span>
+                        </div>
+                    </div>
+                    <div class="component infra">
+                        <div class="component-name">
+                            <span class="component-icon">🧠</span>
+                            Skills & Agents Loaders
+                        </div>
+                        <div class="component-description">Discovers .agents/skills/ and .agents/agents/ for prompt injection</div>
+                        <div class="component-files">
+                            <span class="file-tag">skills.py</span>
+                            <span class="file-tag">agents.py</span>
+                        </div>
+                    </div>
+                    <div class="component infra">
+                        <div class="component-name">
+                            <span class="component-icon">📜</span>
+                            System Prompt Builder
+                        </div>
+                        <div class="component-description">Builds system prompt with tool descriptions, AGENT.md, skills, and agents</div>
+                        <div class="component-files">
+                            <span class="file-tag">system_prompt.py</span>
+                            <span class="file-tag">build_system_prompt()</span>
+                        </div>
+                    </div>
+                    <div class="component infra">
+                        <div class="component-name">
+                            <span class="component-icon">📨</span>
+                            Types (types.py)
+                        </div>
+                        <div class="component-description">Provider-independent message format: Message, ToolCall, ToolResult, ModelResponse, StopReason</div>
+                        <div class="component-files">
+                            <span class="file-tag">types.py</span>
+                            <span class="file-tag">pydantic.BaseModel</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Flow Section -->
+            <div class="flow-section">
+                <h2 class="flow-title">Request Flow</h2>
+                <div class="flow-diagram">
+                    <div class="flow-step">
+                        <div class="flow-step-number">1</div>
+                        <div class="flow-step-content">
+                            <div class="flow-step-title">User Input</div>
+                            <div class="flow-step-desc">User types task in REPL or uses slash command</div>
+                        </div>
+                    </div>
+                    <div class="flow-arrow"></div>
+                    <div class="flow-step">
+                        <div class="flow-step-number">2</div>
+                        <div class="flow-step-content">
+                            <div class="flow-step-title">Normalize & Plan</div>
+                            <div class="flow-step-desc">CLI normalizes input, creates todos, builds system prompt with tools/skills/agents</div>
+                        </div>
+                    </div>
+                    <div class="flow-arrow"></div>
+                    <div class="flow-step">
+                        <div class="flow-step-number">3</div>
+                        <div class="flow-step-content">
+                            <div class="flow-step-title">Agent Loop</div>
+                            <div class="flow-step-desc">AgentLoop.run(): compact context → provider.complete() → execute tools → repeat</div>
+                        </div>
+                    </div>
+                    <div class="flow-arrow"></div>
+                    <div class="flow-step">
+                        <div class="flow-step-number">4</div>
+                        <div class="flow-step-content">
+                            <div class="flow-step-title">Tool Execution</div>
+                            <div class="flow-step-desc">PermissionGate checks safety → callback for user approval → registry.execute()</div>
+                        </div>
+                    </div>
+                    <div class="flow-arrow"></div>
+                    <div class="flow-step">
+                        <div class="flow-step-number">5</div>
+                        <div class="flow-step-content">
+                            <div class="flow-step-title">Completion Review</div>
+                            <div class="flow-step-desc">CompletionResolver uses review_provider to verify task completion, retries if needed</div>
+                        </div>
+                    </div>
+                    <div class="flow-arrow"></div>
+                    <div class="flow-step">
+                        <div class="flow-step-number">6</div>
+                        <div class="flow-step-content">
+                            <div class="flow-step-title">Response & Session</div>
+                            <div class="flow-step-desc">Display result, save session transcript to JSONL</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #667eea;"></div>
+                    <span>Core Agent Loop</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #764ba2;"></div>
+                    <span>Provider Adapters</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f093fb;"></div>
+                    <span>Tools Registry</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4facfe;"></div>
+                    <span>UI & Commands</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #43e97b;"></div>
+                    <span>Config & Safety</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #fa709a;"></div>
+                    <span>Infrastructure</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

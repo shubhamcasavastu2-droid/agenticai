@@ -1,3 +1,16 @@
+"""
+Provider abstraction and OpenAI-compatible implementation for Agentic CLI.
+
+This module provides:
+- Abstract Provider base class for LLM API interactions
+- OpenAICompatibleProvider implementation working with OpenAI, Ollama, NVIDIA NIM,
+  Anthropic (OpenAI-compatible endpoint), and OpenRouter
+- Streaming support with Server-Sent Events (SSE) parsing
+- Retry logic with exponential backoff and Retry-After header support
+- Error classification (timeout, authentication, HTTP errors)
+- Token usage tracking for context window management
+"""
+
 from __future__ import annotations
 
 import asyncio

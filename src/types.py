@@ -1,3 +1,12 @@
+"""
+Core type definitions for Agentic CLI.
+
+This module defines the internal message format and data structures used throughout
+the agent loop, including messages, tool calls, tool results, model responses,
+and tool schemas. These types are provider-independent and form the contract
+between the agent loop, provider adapters, and tools.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

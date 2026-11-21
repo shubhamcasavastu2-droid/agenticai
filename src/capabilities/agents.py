@@ -1,3 +1,24 @@
+"""
+Agents System for Agentic CLI.
+
+This module implements the agents loading mechanism. Agents are markdown files with
+YAML frontmatter that define specialized agent configurations including:
+- Model selection
+- Custom system prompts
+- Tool allow/deny lists
+- Permission overrides
+- Additional context/content
+
+Agents can be loaded and selected via:
+- Slash commands (/agents)
+- Configuration
+- Direct invocation
+
+Structure:
+.agents/agents/<agent_name>.md  # Agent definition with YAML frontmatter
+agents/agents.md                # Global agents registry
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

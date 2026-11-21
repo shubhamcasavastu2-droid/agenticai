@@ -1,3 +1,11 @@
+"""
+Configuration management for Agentic CLI.
+
+This module handles loading configuration from environment variables and .env files,
+providing a centralized Config dataclass with all settings for the agent, provider,
+tools, logging, and session management.
+"""
+
 from __future__ import annotations
 
 import os

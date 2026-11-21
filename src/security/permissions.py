@@ -1,3 +1,21 @@
+"""
+Permission and Path Validation for Agentic CLI.
+
+This module provides:
+- Path validation to prevent directory traversal attacks
+- Tool classification (read vs write tools)
+- Permission gate for user approval of write operations
+- Output truncation utilities
+- Integration with shell safety rules
+
+Security model:
+- All file operations must use validate_path() which resolves symlinks and
+  verifies the path is within the project root using os.path.commonpath
+- Write tools (write_file, edit_file, bash) require explicit user permission
+- Safety rules are evaluated BEFORE allow-lists (defense in depth)
+- Output truncation prevents token overflow from large tool results
+"""
+
 from __future__ import annotations
 
 import os
