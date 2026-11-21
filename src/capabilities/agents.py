@@ -129,3 +129,30 @@ class AgentLoader:
         for agent in self._agents.values():
             lines.append(f"- **{agent.name}**: {agent.description or 'No description'}")
         return "\n".join(lines)
+
+    def read_agents_md_content(self) -> str:
+        """Read the raw agents.md content from common project locations.
+
+        Checks the configured default path first, then common fallback locations.
+        Returns the raw text (empty string when not found).
+        """
+        candidates: list[Path] = []
+        if self.default_agents_md is not None:
+            candidates.append(self.default_agents_md)
+        candidates.extend(
+            [
+                Path.cwd() / "AGENT.md",
+                Path.cwd() / "agents.md",
+                Path.cwd() / ".agents" / "agents.md",
+            ]
+        )
+        seen: set[Path] = set()
+        for path in candidates:
+            if path in seen or not path.exists():
+                continue
+            seen.add(path)
+            try:
+                return path.read_text(encoding="utf-8")
+            except OSError:
+                pass
+        return ""

@@ -278,22 +278,6 @@ class CLI:
             return gap, suggestions
         return None, []
 
-    async def _read_agents_md(self) -> str:
-        """Read the agents.md file from common project locations."""
-        root = self.config.project_root
-        candidates = [
-            root / "AGENT.md",
-            root / "agents.md",
-            root / ".agents" / "agents.md",
-        ]
-        for path in candidates:
-            if path.exists():
-                try:
-                    return path.read_text(encoding="utf-8")
-                except OSError:
-                    pass
-        return ""
-
     async def _match_existing_capabilities(
         self, objective: str, tasks: list[str]
     ) -> list[dict[str, Any]]:
@@ -306,7 +290,7 @@ class CLI:
         if not self.interactive or self.provider is None:
             return []
 
-        agents_md = await self._read_agents_md()
+        agents_md = self.agent_loader.read_agents_md_content() if self.agent_loader else ""
 
         # Gather discovered skills and agents.
         skills: list[Any] = []
