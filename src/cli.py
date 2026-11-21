@@ -57,6 +57,9 @@ class CLI:
         self._stream_open = False
         self.skill_loader: Any = None
         self.agent_loader: Any = None
+        # Confirmed gap decisions preserved across normalize_input calls so
+        # resolved questions are not asked again.
+        self.confirmed_decisions: dict[str, str] = {}
         self._setup_readline()
 
     # ------------------------------------------------------------------ properties
@@ -161,26 +164,35 @@ class CLI:
             self._ui.input_normalized(normalized_text)
             return normalized_text
 
-        # Step 3: detect actual gaps across all tasks.
+        # Step 3: skip tasks whose gap was already confirmed in a prior call
+        # (don't ask resolved questions again).
+        pending_tasks = [
+            t for t in tasks if t not in self.confirmed_decisions
+        ]
+        if not pending_tasks:
+            self._ui.input_normalized(normalized_text)
+            return normalized_text
+
+        # Step 4: detect actual gaps only across pending tasks.
         gaps: list[dict[str, Any]] = []
-        for task in tasks:
+        for task in pending_tasks:
             gap, suggestions = await self._detect_gap(objective, task)
             if gap:
                 gaps.append({"task": task, "gap": gap, "suggestions": suggestions})
 
-        # Step 4: if no real gaps, continue with normalized input unchanged.
+        # Step 5: if no real gaps, continue with normalized input unchanged.
         if not gaps:
             self._ui.input_normalized(normalized_text)
             return normalized_text
 
-        # Step 5: show out-of-scope items on screen.
+        # Step 6: show out-of-scope items on screen.
         self._ui.console.print("\n[ui.header]Out of scope[/ui.header]")
         self._ui.console.print(
             "Items outside the current objective will be ignored unless you add them:"
         )
         self._ui.console.print()
 
-        # Step 6: clarify each gap one-by-one with suggestions.
+        # Step 7: clarify each gap one-by-one with suggestions.
         clarified_tasks: list[dict[str, str]] = []
         for task in tasks:
             matching_gap = None
@@ -205,11 +217,13 @@ class CLI:
                 f"Did you mean {suggestion_text}? Or provide more details."
             )
             answer = await self.ask_user(question, suggestions or None)
+            # Preserve the confirmed decision so this question is not asked again.
+            self.confirmed_decisions[task] = (answer or "").strip()
             enriched = f"{task} — {answer}" if answer and answer.strip() else task
             clarified_tasks.append({"title": enriched, "status": "pending"})
 
-        # Step 7: reference the normalized input with answers again.
-        # Step 8: check existing skills/agents (from agents.md) to load for each task.
+        # Step 8: reference the normalized input with answers again.
+        # Step 9: check existing skills/agents (from agents.md) to load for each task.
         matched_capabilities = await self._match_existing_capabilities(objective, tasks)
         final_text = self._assemble_normalized(
             user_input, objective, clarified_tasks, matched_capabilities
@@ -241,17 +255,35 @@ class CLI:
             return None, []
 
         detect_prompt = (
-            "You review a single task from a user's request. Decide if the task has any "
-            "missing information, ambiguity, or unclear scope that must be resolved before "
-            "work can begin.\n\n"
-            f"Overall objective: {objective}\n"
-            f"Task to review: {task}\n\n"
-            "If the task is clear and complete, reply with exactly: COMPLETE\n"
-            "If there is a gap, reply with exactly this format:\n"
-            "GAP: <short description of what is missing or unclear>\n"
-            "SUGGEST: <option 1> | <option 2> | <option 3>\n"
-            "Provide up to three concrete suggestions. Be concise."
-        )
+        "You are a requirement gap detector. Identify only missing information "
+        "that is essential to fulfilling the user's actual objective.\n\n"
+
+        f"Overall objective: {objective}\n"
+        f"Task to review: {task}\n\n"
+
+        "Rules:\n"
+        "- Detect only gaps that materially affect the requested outcome.\n"
+        "- Do not flag routine implementation, execution, or verification details.\n"
+        "- Do not flag information that can be reasonably inferred from context.\n"
+        "- Do not flag implementation choices the agent can decide with reasonable defaults.\n"
+        "- Do not suggest additional features or expand the task scope.\n"
+        "- Do not treat optional improvements or preferences as required information.\n"
+        "- If the user asks to create/edit a file but did not specify its content or "
+        "purpose, flag that as a GAP (do not invent content).\n"
+        "- If the task can be completed correctly using reasonable defaults, "
+        "consider it COMPLETE.\n"
+        "- Ask for clarification only when missing information could lead to "
+        "a materially incorrect result.\n\n"
+
+        "If no critical gap exists, reply exactly:\n"
+        "COMPLETE\n\n"
+
+        "If a critical gap exists, reply exactly:\n"
+        "GAP: <what is essential and missing>\n"
+        "SUGGEST: <recommended option> | <alternative 1> | <alternative 2>\n\n"
+
+        "Keep the response concise. Return only COMPLETE or the GAP format."
+    )
         try:
             response = await self.provider.complete(
                 system="You are a precise gap-detection assistant. Reply only in the requested format.",
