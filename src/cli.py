@@ -209,7 +209,11 @@ class CLI:
             clarified_tasks.append({"title": enriched, "status": "pending"})
 
         # Step 7: reference the normalized input with answers again.
-        final_text = self._assemble_normalized(user_input, objective, clarified_tasks)
+        # Step 8: check existing skills/agents (from agents.md) to load for each task.
+        matched_capabilities = await self._match_existing_capabilities(objective, tasks)
+        final_text = self._assemble_normalized(
+            user_input, objective, clarified_tasks, matched_capabilities
+        )
         self._ui.input_normalized(final_text)
         return final_text
 
@@ -274,19 +278,169 @@ class CLI:
             return gap, suggestions
         return None, []
 
+    async def _read_agents_md(self) -> str:
+        """Read the agents.md file from common project locations."""
+        root = self.config.project_root
+        candidates = [
+            root / "AGENT.md",
+            root / "agents.md",
+            root / ".agents" / "agents.md",
+        ]
+        for path in candidates:
+            if path.exists():
+                try:
+                    return path.read_text(encoding="utf-8")
+                except OSError:
+                    pass
+        return ""
+
+    async def _match_existing_capabilities(
+        self, objective: str, tasks: list[str]
+    ) -> list[dict[str, Any]]:
+        """Check existing skills and agents (from agents.md) against the tasks.
+
+        Uses the provider to determine which discovered skill or agent can help
+        complete each task. Returns a list of matches with type, name, and the
+        task indices they apply to.
+        """
+        if not self.interactive or self.provider is None:
+            return []
+
+        agents_md = await self._read_agents_md()
+
+        # Gather discovered skills and agents.
+        skills: list[Any] = []
+        agents: list[Any] = []
+        if self.skill_loader is not None:
+            try:
+                skills = self.skill_loader.all()
+            except Exception:
+                skills = []
+        if self.agent_loader is not None:
+            try:
+                agents = self.agent_loader.all()
+            except Exception:
+                agents = []
+
+        if not skills and not agents and not agents_md:
+            return []
+
+        skill_list = "\n".join(
+            f"- {s.name}: {s.description}" for s in skills
+        ) or "(none discovered)"
+        agent_list = "\n".join(
+            f"- {a.name}: {a.description}" for a in agents
+        ) or "(none discovered)"
+
+        tasks_text = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(tasks))
+
+        match_prompt = (
+            "You are a capability-matching assistant. Given a user objective, a list of tasks, "
+            "and the available skills/agents (from agents.md and discovered skill/agent files), "
+            "decide which skill or agent should be loaded to help complete each task.\n\n"
+            f"Objective: {objective}\n\n"
+            f"Tasks:\n{tasks_text}\n\n"
+            f"Available Skills:\n{skill_list}\n\n"
+            f"Available Agents:\n{agent_list}\n\n"
+            f"agents.md content:\n{agents_md or '(none found)'}\n\n"
+            "For each task, reply with exactly one line per task in this format:\n"
+            "TASK <index>: LOAD <type> <name>\n"
+            "or if no capability helps:\n"
+            "TASK <index>: NONE\n"
+            "Only match when the skill/agent name or description clearly applies to the task. "
+            "Do not invent capabilities. type is either 'skill' or 'agent'."
+        )
+        try:
+            response = await self.provider.complete(
+                system="You are a precise capability-matching assistant. Reply only in the requested format.",
+                messages=[Message.user(match_prompt)],
+                tools=[],
+            )
+            result = "".join(
+                block.text for block in response.blocks if isinstance(block, TextBlock)
+            ).strip()
+        except Exception:
+            return []
+
+        matches: list[dict[str, Any]] = []
+        skill_by_name = {s.name: s for s in skills}
+        agent_by_name = {a.name: a for a in agents}
+
+        for line in result.splitlines():
+            line = line.strip()
+            if not line.startswith("TASK "):
+                continue
+            try:
+                prefix, rest = line.split(":", 1)
+                idx_str = prefix[len("TASK "):].strip()
+                task_index = int(idx_str) - 1
+                rest = rest.strip()
+                if rest == "NONE":
+                    continue
+                if rest.startswith("LOAD "):
+                    parts = rest[len("LOAD "):].split(None, 1)
+                    if len(parts) != 2:
+                        continue
+                    ctype, cname = parts[0], parts[1].strip()
+                    capability = None
+                    if ctype == "skill":
+                        capability = skill_by_name.get(cname)
+                    elif ctype == "agent":
+                        capability = agent_by_name.get(cname)
+                    if capability is not None:
+                        matches.append(
+                            {
+                                "type": ctype,
+                                "name": cname,
+                                "task_index": task_index,
+                                "description": getattr(capability, "description", ""),
+                            }
+                        )
+            except (ValueError, IndexError):
+                continue
+        return matches
+
     def _assemble_normalized(
-        self, original_input: str, objective: str, tasks: list[dict[str, str]]
+        self,
+        original_input: str,
+        objective: str,
+        tasks: list[dict[str, str]],
+        matched_capabilities: list[dict[str, Any]] | None = None,
     ) -> str:
         """Reference the normalized input with answers included.
 
-        Preserves original input, refurbished requirement, and builds the clarified
-        task object so downstream todo creation still works.
+        Preserves original input, refurbished requirement, builds the clarified
+        task object, and adds load tasks for matched skills/agents so downstream
+        todo creation still works.
         """
+        matched_capabilities = matched_capabilities or []
         task_lines = "\n".join(f"- {t['title']}" for t in tasks)
+
+        capability_lines: list[str] = []
+        load_task_lines: list[str] = []
+        for m in matched_capabilities:
+            ctype = m["type"]
+            cname = m["name"]
+            desc = m.get("description", "")
+            capability_lines.append(
+                f"- [{ctype}] {cname}: {desc} (applies to task index {m['task_index'] + 1})"
+            )
+            load_task_lines.append(f"- Load {ctype} '{cname}' to help complete its task")
+
         return (
             f"Original user input: {original_input}\n\n"
             f"User wants to achieve: {objective}\n"
             f"Tasks to achieve:\n{task_lines}"
+            + (
+                "\n\nExisting capabilities to load:\n" + "\n".join(capability_lines)
+                if capability_lines
+                else ""
+            )
+            + (
+                "\n\nAdditional tasks to load capabilities:\n" + "\n".join(load_task_lines)
+                if load_task_lines
+                else ""
+            )
         )
 
     # ------------------------------------------------------------------ slash commands
