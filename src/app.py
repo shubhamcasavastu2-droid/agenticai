@@ -106,6 +106,7 @@ class Application:
             max_attempts=self.config.max_completion_attempts,
             review_provider=self.review_provider,
             enabled=self.config.completion_review,
+            completion_review_prompt=self.config.completion_review_prompt,
         )
 
         root = self.config.project_root
@@ -133,6 +134,7 @@ class Application:
             root / "AGENT.md",
             self.skill_loader.format_for_prompt(),
             self.agent_loader.format_for_prompt(),
+            system_prompt_template=self.config.system_prompt_template,
         )
         self.agent_loop = AgentLoop(
             provider=self.provider,

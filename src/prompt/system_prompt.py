@@ -45,26 +45,28 @@ Auto-loaded as context for the agent. Add project-specific guidelines, conventio
 
 
 USER_INPUT_REFUBISH_PROMPT = INPUT_NORMALIZER_PROMPT = """
-Analyze the user's input.
+Analyze the user's input and preserve their exact intent.
 
 - Correct spelling and grammar.
-- Preserve the user's original intent.
-- Return the normalized objective and tasks in English, regardless of the input language.
-- Rewrite the objective clearly.
-- Split the objective into actionable tasks.
-- Do not invent requirements or assumptions.
+- Normalize the objective into clear English.
+- Break it into only the tasks necessary to achieve the objective.
+- Do not expand the scope or introduce unrelated implementation tasks.
+- Do not assume code, configuration, imports, deployment, or project files
+  need modification unless explicitly required by the user.
+- Distinguish workspace/environment changes from actual project changes.
+- Identify genuine gaps only when they prevent understanding or execution.
+- Recommend relevant agents or skills when applicable; otherwise omit them.
+- Tasks must describe the requested outcome, not speculative implementation.
 - Keep the output concise.
-- load agents or skill match with requirements and return the skill name if matched, otherwise skip
-- plan each action and perfrom one by one
+
 User input:
 {user_input}
 
-Return exactly in this format:
+Return exactly:
 
 User wants to achieve: <normalized objective>
 
 Tasks to achieve:
-- <task>
 - <task>
 - <task>
 """
@@ -76,6 +78,7 @@ def build_system_prompt(
     agent_md_path: Path | None = None,
     skills_info: str = "",
     agents_info: str = "",
+    system_prompt_template: str = SYSTEM_PROMPT_TEMPLATE,
 ) -> str:
     working_dir = str(project_root)
     os_name = platform.system()
@@ -83,7 +86,7 @@ def build_system_prompt(
     date = datetime.now().strftime("%Y-%m-%d")
     shell = os.environ.get("SHELL", "unknown")
 
-    prompt = SYSTEM_PROMPT_TEMPLATE.format(
+    prompt = system_prompt_template.format(
         working_dir=working_dir,
         os_name=os_name,
         os_version=os_version,
@@ -113,8 +116,11 @@ def build_system_prompt(
     return prompt
 
 
-def build_user_input_refurbish_prompt(user_input: str) -> str:
-    return USER_INPUT_REFUBISH_PROMPT.format(user_input=user_input)
+def build_user_input_refurbish_prompt(
+    user_input: str,
+    user_input_refurbish_prompt: str = USER_INPUT_REFUBISH_PROMPT,
+) -> str:
+    return user_input_refurbish_prompt.format(user_input=user_input)
 
 def get_tool_descriptions(tools: list) -> str:
     lines = []
