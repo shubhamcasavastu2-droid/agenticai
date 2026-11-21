@@ -161,12 +161,55 @@ class CLI:
             self._ui.input_normalized(normalized_text)
             return normalized_text
 
-        # Step 3: detect gaps and ask the user (with suggestions) until all gaps filled.
-        clarified_tasks = await self._clarify_tasks(objective, tasks)
+        # Step 3: detect actual gaps across all tasks.
+        gaps: list[dict[str, Any]] = []
+        for task in tasks:
+            gap, suggestions = await self._detect_gap(objective, task)
+            if gap:
+                gaps.append({"task": task, "gap": gap, "suggestions": suggestions})
 
-        # Step 4: preserve original input + refurbish requirement + build task object.
+        # Step 4: if no real gaps, continue with normalized input unchanged.
+        if not gaps:
+            self._ui.input_normalized(normalized_text)
+            return normalized_text
+
+        # Step 5: show out-of-scope items on screen.
+        self._ui.console.print("\n[ui.header]Out of scope[/ui.header]")
+        self._ui.console.print(
+            "Items outside the current objective will be ignored unless you add them:"
+        )
+        self._ui.console.print()
+
+        # Step 6: clarify each gap one-by-one with suggestions.
+        clarified_tasks: list[dict[str, str]] = []
+        for task in tasks:
+            matching_gap = None
+            for g in gaps:
+                if g["task"] == task:
+                    matching_gap = g
+                    break
+            if matching_gap is None:
+                clarified_tasks.append({"title": task, "status": "pending"})
+                continue
+
+            gap = matching_gap["gap"]
+            suggestions = matching_gap["suggestions"]
+            self._ui.console.print(f"\n[ui.subheader]Gap found for task:[/ui.subheader] {task}")
+            self._ui.console.print(f"[status.warning]Missing/unclear:[/status.warning] {gap}")
+            if suggestions:
+                self._ui.console.print(f"Suggestions: {', '.join(suggestions)}")
+
+            suggestion_text = ", ".join(suggestions) if suggestions else "please clarify"
+            question = (
+                f"Task '{task}' has a gap: {gap}. "
+                f"Did you mean {suggestion_text}? Or provide more details."
+            )
+            answer = await self.ask_user(question, suggestions or None)
+            enriched = f"{task} — {answer}" if answer and answer.strip() else task
+            clarified_tasks.append({"title": enriched, "status": "pending"})
+
+        # Step 7: reference the normalized input with answers again.
         final_text = self._assemble_normalized(user_input, objective, clarified_tasks)
-
         self._ui.input_normalized(final_text)
         return final_text
 
@@ -184,32 +227,11 @@ class CLI:
                     tasks.append(line[2:].strip())
         return objective, tasks
 
-    async def _clarify_tasks(self, objective: str, tasks: list[str]) -> list[dict[str, str]]:
-        """Detect gaps in each task and ask the user with suggestions via ask_user.
-
-        Returns a list of {"title": ..., "status": "pending"} dicts.
-        """
-        clarified: list[dict[str, str]] = []
-        for task in tasks:
-            gap, suggestions = await self._detect_gap(objective, task)
-            if not gap:
-                clarified.append({"title": task, "status": "pending"})
-                continue
-
-            suggestion_text = ", ".join(suggestions) if suggestions else "please clarify"
-            question = (
-                f"Task '{task}' seems incomplete or ambiguous: {gap}. "
-                f"Did you mean {suggestion_text}? Or provide more details."
-            )
-            answer = await self.ask_user(question, suggestions or None)
-            enriched = f"{task} — {answer}" if answer and answer.strip() else task
-            clarified.append({"title": enriched, "status": "pending"})
-        return clarified
-
     async def _detect_gap(self, objective: str, task: str) -> tuple[str | None, list[str]]:
         """Use the provider to detect gaps in a task and suggest clarifications.
 
         Returns (gap_description_or_None, [suggestions]).
+        Only returns a gap if one actually exists; otherwise returns (None, []).
         """
         if not self.interactive or self.provider is None:
             return None, []
@@ -255,10 +277,10 @@ class CLI:
     def _assemble_normalized(
         self, original_input: str, objective: str, tasks: list[dict[str, str]]
     ) -> str:
-        """Preserve original input, refurbish requirement, build task object.
+        """Reference the normalized input with answers included.
 
-        Returns a string that keeps the original user input, the refurbished objective,
-        and the clarified task list so downstream todo creation still works.
+        Preserves original input, refurbished requirement, and builds the clarified
+        task object so downstream todo creation still works.
         """
         task_lines = "\n".join(f"- {t['title']}" for t in tasks)
         return (
