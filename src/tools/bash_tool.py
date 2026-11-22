@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from ..permissions import check_deny_list, make_truncate_output, validate_path
+from ..security.permissions import make_truncate_output, validate_path
+from ..security.shell_safety import find_denied_reason
 from ..types import Tool, ToolSchema
 
 BASH_TOOL_SCHEMA = ToolSchema(
@@ -13,7 +14,13 @@ BASH_TOOL_SCHEMA = ToolSchema(
         "type": "object",
         "properties": {
             "command": {"type": "string", "description": "Shell command to execute"},
-            "timeout_seconds": {"type": "integer", "description": "Timeout in seconds", "minimum": 1, "maximum": 300, "default": 60},
+            "timeout_seconds": {
+                "type": "integer",
+                "description": "Timeout in seconds",
+                "minimum": 1,
+                "maximum": 300,
+                "default": 60,
+            },
             "workdir": {"type": "string", "description": "Working directory (relative to project root)"},
         },
         "required": ["command"],
@@ -34,8 +41,9 @@ class BashTool(Tool):
 
     async def execute(self, command: str, timeout_seconds: int = 60, workdir: str | None = None) -> str:
         # Check deny list
-        if check_deny_list(command):
-            raise PermissionError(f"Command denied by security policy: {command}")
+        reason = find_denied_reason(command, self.project_root)
+        if reason:
+            raise PermissionError(f"Command denied by security policy: {reason}")
 
         # Resolve working directory
         if workdir:

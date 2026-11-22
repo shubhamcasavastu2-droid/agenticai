@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..permissions import make_truncate_output, validate_path
+from ..security.permissions import make_truncate_output, validate_path
 from ..types import Tool, ToolSchema
 
 GREP_SCHEMA = ToolSchema(
@@ -13,7 +13,11 @@ GREP_SCHEMA = ToolSchema(
         "type": "object",
         "properties": {
             "pattern": {"type": "string", "description": "Regex pattern to search for"},
-            "path": {"type": "string", "description": "Directory or file to search in (relative to project root)", "default": "."},
+            "path": {
+                "type": "string",
+                "description": "Directory or file to search in (relative to project root)",
+                "default": ".",
+            },
             "include": {"type": "string", "description": "File pattern to include (e.g., '*.py')"},
         },
         "required": ["pattern"],

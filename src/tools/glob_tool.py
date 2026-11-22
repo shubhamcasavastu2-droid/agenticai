@@ -3,7 +3,7 @@ from __future__ import annotations
 import glob as glob_module
 from pathlib import Path
 
-from ..permissions import make_truncate_output
+from ..security.permissions import make_truncate_output
 from ..types import Tool, ToolSchema
 
 GLOB_SCHEMA = ToolSchema(

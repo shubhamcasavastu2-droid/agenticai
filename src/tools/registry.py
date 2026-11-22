@@ -1,3 +1,11 @@
+"""
+Tool Registry for Agentic CLI.
+
+This module provides the ToolRegistry class that manages the collection of available
+tools. It handles tool registration, lookup, schema generation for provider tool
+calling, and tool execution dispatch.
+"""
+
 from __future__ import annotations
 
 from typing import Any

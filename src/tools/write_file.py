@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..permissions import validate_path
+from ..security.permissions import validate_path
 from ..types import Tool, ToolSchema
 
 WRITE_FILE_SCHEMA = ToolSchema(

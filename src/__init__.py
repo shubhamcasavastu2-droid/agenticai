@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from .agent import AgentLoop
 from .cli import CLI
 from .config import Config
-from .permissions import PermissionGate, validate_path
+from .core.agent import AgentLoop
+from .prompt.system_prompt import build_system_prompt
 from .provider import OpenAICompatibleProvider, Provider
-from .system_prompt import build_system_prompt
+from .security.permissions import PermissionGate, validate_path
 from .tools import ToolRegistry
 from .types import (
     Block,

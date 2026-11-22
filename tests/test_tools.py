@@ -7,12 +7,12 @@ import httpx
 import pytest
 
 from src.config import Config
-from src.permissions import PathValidationError, check_deny_list, validate_path
 from src.provider import (
     OpenAICompatibleProvider,
     ProviderAuthenticationError,
     ProviderTimeoutError,
 )
+from src.security.permissions import PathValidationError, check_deny_list, validate_path
 from src.tools.edit_file import EditFileError, create_edit_file_tool
 from src.tools.read_file import create_read_file_tool
 from src.types import ToolCall

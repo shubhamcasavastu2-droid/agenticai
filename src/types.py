@@ -1,15 +1,17 @@
+"""
+Core type definitions for Agentic CLI.
+
+This module defines the internal message format and data structures used throughout
+the agent loop, including messages, tool calls, tool results, model responses,
+and tool schemas. These types are provider-independent and form the contract
+between the agent loop, provider adapters, and tools.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
-
-try:
-    from enum import StrEnum
-except ImportError:
-    # Python < 3.11 fallback
-    class StrEnum(str, Enum):
-        pass
 
 
 class Role(StrEnum):
@@ -37,6 +39,10 @@ class ToolCall:
     name: str
     arguments: dict[str, Any]
     type: Literal["tool_call"] = "tool_call"
+    # Set when the model emitted arguments that are not a valid JSON object; the agent returns
+    # this to the model as a tool error instead of executing the call.
+    parse_error: str | None = None
+    raw_arguments: str | None = None
 
 
 @dataclass

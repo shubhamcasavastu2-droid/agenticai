@@ -10,24 +10,33 @@ PlanCallback = Callable[[str, str, list[str], list[str]], Awaitable[str]]
 PLAN_SCHEMA = ToolSchema(
     name="plan",
     description=(
-        "Present an English-language implementation plan to the user and wait for approval, "
-        "revision feedback, or rejection before proceeding."
+        "Present an implementation plan to the user for review and approval. "
+        "Include the objective, ordered implementation steps, and risks. "
+        "Pause execution and wait for the user's decision. "
+        "The user may approve the plan, request revisions, or reject it. "
+        "Do not execute implementation tasks before approval."
     ),
     parameters={
         "type": "object",
         "properties": {
-            "title": {"type": "string", "description": "Short plan title"},
-            "summary": {"type": "string", "description": "What the plan will accomplish"},
+            "title": {
+                "type": "string",
+                "description": "Short plan title"
+            },
+            "summary": {
+                "type": "string",
+                "description": "Objective and expected outcome"
+            },
             "steps": {
                 "type": "array",
                 "items": {"type": "string"},
                 "minItems": 1,
-                "description": "Ordered implementation steps",
+                "description": "Ordered implementation steps"
             },
             "risks": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Optional risks or assumptions",
+                "description": "Risks, dependencies, and assumptions"
             },
         },
         "required": ["title", "summary", "steps"],

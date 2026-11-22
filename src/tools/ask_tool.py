@@ -10,17 +10,27 @@ AskCallback = Callable[[str, list[str] | None], Awaitable[str]]
 ASK_USER_SCHEMA = ToolSchema(
     name="ask_user",
     description=(
-        "Ask the user an English-language question and return their answer. "
-        "Use English options for a fixed choice."
+        "Ask the user for clarification or missing information. "
+        "Use this tool whenever the user's request is ambiguous, "
+        "a required decision is missing, or confirmation is needed. "
+        "For fixed choices, provide English-language options. "
+        "For open-ended questions, omit options. "
+        "Wait for the user's answer before continuing."
     ),
     parameters={
         "type": "object",
         "properties": {
-            "question": {"type": "string", "description": "Question to ask the user"},
+            "question": {
+                "type": "string",
+                "description": "A clear, concise question in English."
+            },
             "options": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Optional list of allowed answers",
+                "description": (
+                    "Optional English-language choices. "
+                    "Omit when a free-text answer is expected."
+                )
             },
         },
         "required": ["question"],

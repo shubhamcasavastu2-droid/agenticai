@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.agent import AgentLoop
-from src.completion import CompletionResolver
-from src.permissions import PermissionGate
+from src.core.agent import AgentLoop
+from src.core.completion import CompletionResolver
+from src.security.permissions import PermissionGate
 from src.tools.registry import ToolRegistry
 from src.types import ModelResponse, StopReason, TextBlock, Tool, ToolCall, ToolSchema
 
@@ -57,7 +57,7 @@ async def test_resolver_retries_incomplete_work_with_full_context():
     registry.register(WriteMarkerTool())
     permissions = PermissionGate()
     permissions.allow_auto("write_marker")
-    agent = AgentLoop(provider, registry, permissions, "coding agent", max_steps=2)
+    agent = AgentLoop(provider, {"agent": provider}, registry, permissions, "coding agent", max_steps=2)
     agent.add_user_message("Create project documentation")
     resolver = CompletionResolver(provider, max_attempts=3)
 
@@ -91,7 +91,7 @@ async def test_resolver_stops_at_attempt_limit_and_marks_unverified():
             review_response(False, "The requested document is still missing."),
         ]
     )
-    agent = AgentLoop(provider, ToolRegistry(), PermissionGate(), "coding agent", max_steps=1)
+    agent = AgentLoop(provider, {"agent": provider}, ToolRegistry(), PermissionGate(), "coding agent", max_steps=1)
     agent.add_user_message("Create a document")
 
     result = await CompletionResolver(provider, max_attempts=2).run(
@@ -117,7 +117,7 @@ async def test_resolver_does_not_review_token_limited_error_as_complete():
             ),
         ]
     )
-    agent = AgentLoop(provider, ToolRegistry(), PermissionGate(), "coding agent", max_steps=1)
+    agent = AgentLoop(provider, {"agent": provider}, ToolRegistry(), PermissionGate(), "coding agent", max_steps=1)
 
     result = await CompletionResolver(provider, max_attempts=1).run(
         agent,
@@ -142,7 +142,7 @@ async def test_resolver_does_not_restart_task_after_output_limit_exhaustion():
             ),
         ]
     )
-    agent = AgentLoop(provider, ToolRegistry(), PermissionGate(), "coding agent", max_steps=1)
+    agent = AgentLoop(provider, {"agent": provider}, ToolRegistry(), PermissionGate(), "coding agent", max_steps=1)
 
     result = await CompletionResolver(provider, max_attempts=3).run(
         agent,
