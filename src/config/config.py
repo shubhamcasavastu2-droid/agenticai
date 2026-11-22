@@ -15,6 +15,8 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from .project_dir import Project, get_project_dir
+
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
 
@@ -155,16 +157,30 @@ class Config:
     review_model: str = ""  # empty -> reuse `model`
     log_dir: Path = field(default_factory=lambda: Path("logs"))
     session_dir: Path | None = None  # None -> <project_root>/.agentic/sessions
-    project_root: Path = field(default_factory=Path.cwd)
+    project_root: Project = field(default_factory=Project.get_instance)
     workspace_dir: Path = field(init=False)
     normalizer_system_prompt: str = NORMALIZER_SYSTEM_PROMPT_DEFAULT
     completion_review_prompt: str = COMPLETION_REVIEW_PROMPT_DEFAULT
     system_prompt_template: str = SYSTEM_PROMPT_TEMPLATE_DEFAULT
     user_input_refurbish_prompt: str = USER_INPUT_REFURBISH_PROMPT_DEFAULT
 
+    def __post_init__(self) -> None:
+        """Initialize workspace_dir from the project root."""
+        root = (
+            self.project_root.get_products_dir()
+            if hasattr(self.project_root, "get_products_dir")
+            else self.project_root
+        )
+        self.workspace_dir = root
+
     @property
     def sessions_path(self) -> Path:
-        return self.session_dir or (self.project_root / ".agentic" / "sessions")
+        root = (
+            self.project_root.get_products_dir()
+            if hasattr(self.project_root, "get_products_dir")
+            else self.project_root
+        )
+        return self.session_dir or (root / ".agentic" / "sessions")
 
     @classmethod
     def getValues(cls, key: str, default_val: str = "", is_option: bool = False) -> Any:
@@ -199,6 +215,7 @@ class Config:
             if project_root is not None
             else Path(get_env("AGENTIC_PROJECT_ROOT", ".")).resolve()
         )
+        project = get_project_dir().updated_project_dir(resolved_project_root)
         return cls(
             base_url=get_env("AGENTIC_BASE_URL", "http://localhost:11434/v1"),
             api_key=get_env("AGENTIC_API_KEY", "ollama"),
@@ -215,7 +232,7 @@ class Config:
             review_model=get_env("AGENTIC_REVIEW_MODEL", ""),
             log_dir=Path(get_env("AGENTIC_LOG_DIR", "logs")),
             session_dir=Path(session_dir).expanduser() if session_dir else None,
-            project_root=resolved_project_root,
+            project_root=project,
             normalizer_system_prompt=get_env("AGENTIC_NORMALIZER_SYSTEM_PROMPT", NORMALIZER_SYSTEM_PROMPT_DEFAULT),
             completion_review_prompt=get_env("AGENTIC_COMPLETION_REVIEW_PROMPT", COMPLETION_REVIEW_PROMPT_DEFAULT),
             system_prompt_template=get_env("AGENTIC_SYSTEM_PROMPT_TEMPLATE", SYSTEM_PROMPT_TEMPLATE_DEFAULT),

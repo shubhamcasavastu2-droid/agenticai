@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ..config.project_dir import Project
 from .shell_safety import find_denied_reason
 
 
@@ -93,7 +94,7 @@ INTERACTIVE_TOOLS = frozenset({"ask_user", "plan"})
 class PermissionGate:
     """Per-session tool permissions. Safety rules are always evaluated before allow-lists."""
 
-    def __init__(self, project_root: Path | None = None, default_auto_allow: frozenset[str] = frozenset()):
+    def __init__(self, project_root: Project | None = None, default_auto_allow: frozenset[str] = frozenset()):
         self.project_root = project_root
         self.default_auto_allow = default_auto_allow
         self._always_allow: set[str] = set()  # tool names always allowed
@@ -106,7 +107,13 @@ class PermissionGate:
             return f"Tool '{tool_name}' is denied for this session"
         if tool_name == "bash":
             command = str(args.get("command", ""))
-            reason = find_denied_reason(command, self.project_root)
+            root_path = (
+                self.project_root.get_products_dir()
+                if self.project_root is not None
+                and hasattr(self.project_root, "get_products_dir")
+                else self.project_root
+            )
+            reason = find_denied_reason(command, root_path)
             if reason:
                 return f"Command blocked by safety policy: {reason}"
         return None

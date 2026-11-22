@@ -130,32 +130,7 @@ class CLI:
 
     # ------------------------------------------------------------------ normalization / gap clarification
 
-    async def normalize_input(self, user_input: str) -> str:
-        """Refurbish user input via the model provider."""
-        assert self.provider is not None
-        self.end_stream()
 
-        response = await self.provider.complete(
-            system=self.config.normalizer_system_prompt,
-            messages=[
-                Message.user(
-                    build_user_input_refurbish_prompt(
-                        user_input, user_input_refurbish_prompt=self.config.user_input_refurbish_prompt
-                    )
-                )
-            ],
-            tools=[],
-        )
-        normalized_text = "".join(
-            block.text for block in response.blocks if isinstance(block, TextBlock)
-        )
-        self.end_stream()
-        if normalized_text.startswith("Error:"):
-            self._ui.normalization_failed(normalized_text)
-            return normalized_text
-
-        self._ui.input_normalized(normalized_text)
-        return normalized_text
 
     # ------------------------------------------------------------------ slash commands
 
@@ -268,6 +243,32 @@ class CLI:
         if options:
             return self._ui.prompt(question, choices=options)
         return self._ui.prompt(question)
+
+    async def normalize_input(self, user_input: str) -> str:
+        """Normalize user input via the model provider."""
+        assert self.provider is not None
+        self.end_stream()
+        response = await self.provider.complete(
+            system=self.config.normalizer_system_prompt,
+            messages=[
+                Message.user(
+                    build_user_input_refurbish_prompt(
+                        user_input,
+                        user_input_refurbish_prompt=self.config.user_input_refurbish_prompt,
+                    )
+                )
+            ],
+            tools=[],
+        )
+        normalized_text = "".join(
+            block.text for block in response.blocks if isinstance(block, TextBlock)
+        )
+        self.end_stream()
+        if normalized_text.startswith("Error:"):
+            self._ui.normalization_failed(normalized_text)
+            return normalized_text
+        self._ui.input_normalized(normalized_text)
+        return normalized_text
 
     async def _clarify_empty_response(self, question: str) -> str:
         return await self.ask_user(question, None)

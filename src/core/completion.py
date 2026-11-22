@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..logger import log_info, log_warning
+from ..prompt.system_prompt import build_user_input_refurbish_prompt
 from ..provider import Provider, ProviderTimeoutError
 from ..types import Message, ReasoningBlock, TextBlock, ToolCall, ToolResult
 from .agent import AgentLoop
@@ -66,15 +67,43 @@ class CompletionResolver:
         enabled: bool = True,
         max_trace_chars: int = DEFAULT_MAX_TRACE_CHARS,
         completion_review_prompt: str = COMPLETION_REVIEW_PROMPT_DEFAULT,
+        config: Any = None,  # for access to normalizer prompt
+        cli: Any = None,  # for logging and user feedback
     ):
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least 1")
         self.provider = provider
         self.review_provider = review_provider
+        self.config = config
         self.max_attempts = max_attempts
         self.enabled = enabled
         self.max_trace_chars = max_trace_chars
         self.completion_review_prompt = completion_review_prompt
+        self.cli = cli
+
+    async def normalize_input(self, user_input: str) -> str:
+        """Refurbish user input via the model provider."""
+
+        response = await self.provider.complete(
+            system=self.config.normalizer_system_prompt,
+            messages=[
+                Message.user(
+                    build_user_input_refurbish_prompt(
+                        user_input, user_input_refurbish_prompt=self.config.user_input_refurbish_prompt
+                    )
+                )
+            ],
+            tools=[],
+        )
+        normalized_text = "".join(
+            block.text for block in response.blocks if isinstance(block, TextBlock)
+        )
+        if normalized_text.startswith("Error:"):
+            self.cli._ui.normalization_failed(normalized_text)
+            return normalized_text
+
+        self.cli._ui.input_normalized(normalized_text)
+        return normalized_text
 
     async def run(
         self,

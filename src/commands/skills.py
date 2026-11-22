@@ -116,7 +116,7 @@ async def create_skill(cli: CLI, name: str, description: str) -> None:
     if not SKILL_NAME.match(name):
         cli._ui.error("Invalid skill name: use lowercase letters, digits and hyphens (max 64)")
         return
-    skill_dir = cli.config.project_root / ".agents" / "skills" / name
+    skill_dir = cli.config.project_root.get_products_dir() / ".agents" / "skills" / name
     if (skill_dir / "SKILL.md").exists():
         cli._ui.error(f"Skill already exists: {name}")
         return

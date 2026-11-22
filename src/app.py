@@ -17,7 +17,7 @@ from __future__ import annotations
 from .capabilities.agents import AgentLoader
 from .capabilities.skills import SkillLoader
 from .cli import CLI
-from .config import Config
+from .config.config import Config
 from .core.agent import AgentLoop
 from .core.completion import CompletionResolver
 from .logger import (
@@ -60,9 +60,16 @@ class Application:
         self.provider: OpenAICompatibleProvider | None = None
         self.review_provider: OpenAICompatibleProvider | None = None
         self.registry = ToolRegistry()
+        # project_root may be a Project singleton or a plain Path; extract Path
+        _root = (
+            config.project_root.get_products_dir()
+            if hasattr(config.project_root, "get_products_dir")
+            else config.project_root
+        )
         self.permission_gate = PermissionGate(
             config.project_root, default_auto_allow=READ_ONLY_TOOLS
         )
+        self.project_dir = _root
         self.agent_loop: AgentLoop | None = None
         self.completion_resolver: CompletionResolver | None = None
         self.skill_loader: SkillLoader | None = None
@@ -121,9 +128,15 @@ class Application:
             review_provider=self.review_provider,
             enabled=self.config.completion_review,
             completion_review_prompt=self.config.completion_review_prompt,
+            cli=self.cli,
+            config=self.config
         )
 
-        root = self.config.project_root
+        root = (
+            self.config.project_root.get_products_dir()
+            if hasattr(self.config.project_root, "get_products_dir")
+            else self.config.project_root
+        )
         max_output = self.config.max_output_size
         self.registry.register(create_read_file_tool(root, max_output))
         self.registry.register(create_write_file_tool(root))
@@ -198,13 +211,11 @@ class Application:
                 user_input = await self.cli.prompt_user()
                 if user_input is None:
                     continue
-                if user_input.startswith("/"):
-                    await self.cli.handle_slash_command(user_input)
-                    continue
                 if not self.agent_loop:
                     continue
 
-                normalized_input = await self.cli.normalize_input(user_input)
+                assert self.completion_resolver is not None
+                normalized_input = await self.completion_resolver.normalize_input(user_input)
                 if normalized_input.startswith("Error:"):
                     continue
                 self.cli._create_todos_from_normalized(normalized_input)
