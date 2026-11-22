@@ -156,6 +156,7 @@ class Config:
     log_dir: Path = field(default_factory=lambda: Path("logs"))
     session_dir: Path | None = None  # None -> <project_root>/.agentic/sessions
     project_root: Path = field(default_factory=Path.cwd)
+    workspace_dir: Path = field(init=False)
     normalizer_system_prompt: str = NORMALIZER_SYSTEM_PROMPT_DEFAULT
     completion_review_prompt: str = COMPLETION_REVIEW_PROMPT_DEFAULT
     system_prompt_template: str = SYSTEM_PROMPT_TEMPLATE_DEFAULT
@@ -178,7 +179,7 @@ class Config:
         return value
 
     @classmethod
-    def from_env(cls, env_file: Path | None = None) -> Config:
+    def from_env(cls, env_file: Path | None = None, project_root: str | Path | None = None) -> Config:
         if env_file and env_file.exists():
             load_dotenv(env_file)
         else:
@@ -193,6 +194,11 @@ class Config:
                     break
 
         session_dir = get_env("AGENTIC_SESSION_DIR")
+        resolved_project_root = (
+            Path(project_root).resolve()
+            if project_root is not None
+            else Path(get_env("AGENTIC_PROJECT_ROOT", ".")).resolve()
+        )
         return cls(
             base_url=get_env("AGENTIC_BASE_URL", "http://localhost:11434/v1"),
             api_key=get_env("AGENTIC_API_KEY", "ollama"),
@@ -209,7 +215,7 @@ class Config:
             review_model=get_env("AGENTIC_REVIEW_MODEL", ""),
             log_dir=Path(get_env("AGENTIC_LOG_DIR", "logs")),
             session_dir=Path(session_dir).expanduser() if session_dir else None,
-            project_root=Path(get_env("AGENTIC_PROJECT_ROOT", ".")).resolve(),
+            project_root=resolved_project_root,
             normalizer_system_prompt=get_env("AGENTIC_NORMALIZER_SYSTEM_PROMPT", NORMALIZER_SYSTEM_PROMPT_DEFAULT),
             completion_review_prompt=get_env("AGENTIC_COMPLETION_REVIEW_PROMPT", COMPLETION_REVIEW_PROMPT_DEFAULT),
             system_prompt_template=get_env("AGENTIC_SYSTEM_PROMPT_TEMPLATE", SYSTEM_PROMPT_TEMPLATE_DEFAULT),
