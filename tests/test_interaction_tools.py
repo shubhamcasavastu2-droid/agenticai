@@ -63,9 +63,9 @@ async def test_plan_tool_returns_user_decision():
 @pytest.mark.asyncio
 async def test_cli_registers_interaction_tools(tmp_path):
     from src.app import Application
-    from src.config import Config
+    from src.config.config import Config
 
-    app = Application(Config(project_root=tmp_path))
+    app = Application(Config(root_dir=tmp_path))
     await app.initialize()
 
     try:
@@ -81,11 +81,11 @@ async def test_cli_registers_interaction_tools(tmp_path):
 async def test_cli_normalizes_input_via_provider(tmp_path, monkeypatch):
     import src.cli as cli_module
     from src.cli import CLI
-    from src.config import Config
+    from src.config.config import Config
     from src.provider import ModelResponse
     from src.types import StopReason, TextBlock
 
-    cli = CLI(Config(project_root=tmp_path))
+    cli = CLI(Config(root_dir=tmp_path))
     output = StringIO()
     monkeypatch.setattr(cli_module, "console", Console(file=output, force_terminal=False))
 
@@ -109,11 +109,11 @@ async def test_cli_normalizes_input_via_provider(tmp_path, monkeypatch):
 async def test_cli_does_not_send_normalization_error_to_agent(tmp_path, monkeypatch):
     import src.cli as cli_module
     from src.cli import CLI
-    from src.config import Config
+    from src.config.config import Config
     from src.provider import ModelResponse
     from src.types import StopReason, TextBlock
 
-    cli = CLI(Config(project_root=tmp_path))
+    cli = CLI(Config(root_dir=tmp_path))
     output = StringIO()
     monkeypatch.setattr(cli_module, "console", Console(file=output, force_terminal=False))
 

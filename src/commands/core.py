@@ -77,9 +77,13 @@ async def workspace_command(cli: CLI, args: list[str]) -> None:
     from ..config.project_dir import Project
 
     if not args:
-        current = Project.get_instance().project_root
+        current = Project.get_instance().workspace_dir
+        root = Project.get_instance().root_dir
         cli.console.print(
-            f"[ui.subheader]Current workspace:[/ui.subheader]  [cyan]{current}[/cyan]"
+            f"[ui.subheader]Workspace dir:[/ui.subheader]  [cyan]{current}[/cyan]"
+        )
+        cli.console.print(
+            f"[ui.subheader]Root dir (skills/agents):[/ui.subheader]  [cyan]{root}[/cyan]"
         )
         cli.console.print("Usage: /workspace <directory-path>")
         return
@@ -94,7 +98,7 @@ async def workspace_command(cli: CLI, args: list[str]) -> None:
         await app.refresh_workspace(new_dir)
     else:
         # Fallback: update Project singleton directly
-        Project.set_project_dir(new_dir)
+        Project.set_workspace_dir(new_dir)
         cli.console.print(f"[status.success]Workspace changed to:[/status.success] {new_dir}")
 
 

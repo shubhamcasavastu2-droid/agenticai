@@ -116,7 +116,7 @@ async def create_skill(cli: CLI, name: str, description: str) -> None:
     if not SKILL_NAME.match(name):
         cli._ui.error("Invalid skill name: use lowercase letters, digits and hyphens (max 64)")
         return
-    skill_dir = cli.config.project_root.get_products_dir() / ".agents" / "skills" / name
+    skill_dir = cli.config.workspace_dir / ".agents" / "skills" / name
     if (skill_dir / "SKILL.md").exists():
         cli._ui.error(f"Skill already exists: {name}")
         return
@@ -136,7 +136,7 @@ async def create_skill(cli: CLI, name: str, description: str) -> None:
     design_agent = AgentLoop(
         provider=cli.provider,
         registry=design_tools,
-        permission_gate=PermissionGate(cli.config.project_root, default_auto_allow=READ_ONLY_TOOLS),
+        permission_gate=PermissionGate(cli.config.root_dir, default_auto_allow=READ_ONLY_TOOLS),
         system_prompt="You design SKILL.md files for a coding agent. Follow the user's requirements exactly.",
         max_steps=5,
         reasoning_callback=cli.on_reasoning,

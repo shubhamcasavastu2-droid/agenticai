@@ -215,11 +215,11 @@ async def test_cli_slash_commands_dispatch_through_registry(tmp_path, monkeypatc
 
     import src.cli as cli_module
     from src.app import Application
-    from src.config import Config
+    from src.config.config import Config
 
     output = StringIO()
     monkeypatch.setattr(cli_module, "console", Console(file=output, force_terminal=False, width=200))
-    app = Application(Config(project_root=tmp_path))
+    app = Application(Config(root_dir=tmp_path))
     cli = app.cli
     await app.initialize()
     try:

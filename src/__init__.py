@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .cli import CLI
-from .config import Config
+from .config.config import Config
 from .core.agent import AgentLoop
 from .prompt.system_prompt import build_system_prompt
 from .provider import OpenAICompatibleProvider, Provider

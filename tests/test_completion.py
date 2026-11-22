@@ -162,7 +162,7 @@ def test_resolver_requires_positive_attempt_budget():
 
 
 def test_completion_attempt_budget_loads_from_environment(monkeypatch, tmp_path):
-    from src.config import Config
+    from src.config.config import Config
 
     monkeypatch.setenv("AGENTIC_MAX_COMPLETION_ATTEMPTS", "5")
     config = Config.from_env(env_file=tmp_path / "missing.env")

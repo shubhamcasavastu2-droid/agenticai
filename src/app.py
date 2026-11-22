@@ -65,16 +65,21 @@ class Application:
         self.provider: OpenAICompatibleProvider | None = None
         self.review_provider: OpenAICompatibleProvider | None = None
         self.registry = ToolRegistry()
-        # project_root may be a Project singleton or a plain Path; extract Path
-        _root = (
-            config.project_root.get_products_dir()
-            if hasattr(config.project_root, "get_products_dir")
-            else config.project_root
+        # root_dir is fixed (from Project singleton), workspace_dir is changeable
+        self.root_dir = (
+            config.root_dir.get_products_dir()
+            if hasattr(config.root_dir, "get_products_dir")
+            else config.root_dir
+        )
+        self.workspace_dir = (
+            config.workspace_dir
+            if hasattr(config.workspace_dir, "get_products_dir")
+            else config.workspace_dir
         )
         self.permission_gate = PermissionGate(
-            config.project_root, default_auto_allow=READ_ONLY_TOOLS
+            config.root_dir, default_auto_allow=READ_ONLY_TOOLS
         )
-        self.project_dir = _root
+        self.project_dir = self.workspace_dir
         self.agent_loop: AgentLoop | None = None
         self.completion_resolver: CompletionResolver | None = None
         self.skill_loader: SkillLoader | None = None
@@ -138,28 +143,53 @@ class Application:
         )
 
         root = (
-            self.config.project_root.get_products_dir()
-            if hasattr(self.config.project_root, "get_products_dir")
-            else self.config.project_root
+            self.config.root_dir.get_products_dir()
+            if hasattr(self.config.root_dir, "get_products_dir")
+            else self.config.root_dir
+        )
+        workspace = (
+            self.config.workspace_dir
+            if hasattr(self.config.workspace_dir, "get_products_dir")
+            else self.config.workspace_dir
         )
         max_output = self.config.max_output_size
-        self.registry.register(create_read_file_tool(root, max_output))
-        self.registry.register(create_write_file_tool(root))
-        self.registry.register(create_edit_file_tool(root))
-        self.registry.register(create_glob_tool(root, max_output))
-        self.registry.register(create_grep_tool(root, max_output))
-        self.registry.register(create_bash_tool(root, max_output))
+        self.registry.register(create_read_file_tool(workspace, max_output))
+        self.registry.register(create_write_file_tool(workspace))
+        self.registry.register(create_edit_file_tool(workspace))
+        self.registry.register(create_glob_tool(workspace, max_output))
+        self.registry.register(create_grep_tool(workspace, max_output))
+        self.registry.register(create_bash_tool(workspace, max_output))
         self.registry.register(create_ask_user_tool(self.cli.ask_user))
         self.registry.register(create_plan_tool(self.cli.present_plan))
         self.registry.register(create_todo_tool(self.cli._todo_callback))
         self.registry.register(create_change_workspace_tool())
 
+        # Load skills from root_dir first, then workspace_dir (workspace takes priority)
         self.skill_loader = SkillLoader(root / ".agents" / "skills")
         self.skill_loader.discover()
+        workspace_skills_dir = workspace / ".agents" / "skills"
+        if workspace_skills_dir.exists():
+            workspace_skill_loader = SkillLoader(workspace_skills_dir)
+            workspace_skill_loader.discover()
+            # Workspace skills override root skills with same name
+            for skill in workspace_skill_loader.all():
+                self.skill_loader._skills[skill.name] = skill
+
+        # Load agents from root_dir first, then workspace_dir (workspace takes priority)
         self.agent_loader = AgentLoader(
             root / ".agents" / "agents", root / ".agents" / "agents.md"
         )
         self.agent_loader.discover()
+        workspace_agents_dir = workspace / ".agents" / "agents"
+        workspace_agents_md = workspace / ".agents" / "agents.md"
+        if workspace_agents_dir.exists() or workspace_agents_md.exists():
+            workspace_agent_loader = AgentLoader(
+                workspace_agents_dir, workspace_agents_md
+            )
+            workspace_agent_loader.discover()
+            # Workspace agents override root agents with same name
+            for agent in workspace_agent_loader.all():
+                self.agent_loader._agents[agent.name] = agent
 
         system_prompt = build_system_prompt(
             root,
@@ -196,10 +226,11 @@ class Application:
         self.cli.agent_loader = self.agent_loader
 
     async def refresh_workspace(self, new_workspace_dir: str | Path) -> None:
-        """Re-initialize all workspace-dependent components after a workspace change.
+        """Re-initialize workspace-dependent components after a workspace change.
 
-        Updates the Project singleton, re-registers all file tools with the new
-        root, re-discovers skills and agents, and rebuilds the system prompt.
+        Only workspace_dir changes; root_dir stays constant. Re-registers file tools
+        with the new workspace, re-discovers skills/agents from both root and workspace
+        (workspace takes priority), and rebuilds the system prompt.
         """
         from pathlib import Path
 
@@ -208,31 +239,55 @@ class Application:
         if not new_dir.is_dir():
             raise ValueError(f"'{new_dir}' is not a valid directory")
 
-        # Update the Project singleton
-        Project.set_project_dir(new_dir)
+        # Update only the workspace_dir in Project singleton; root_dir stays constant
+        Project.set_workspace_dir(new_dir)
 
-        # Re-register file tools with the new root
+        root = (
+            self.config.root_dir.get_products_dir()
+            if hasattr(self.config.root_dir, "get_products_dir")
+            else self.config.root_dir
+        )
+        workspace = new_dir
         max_output = self.config.max_output_size
-        self.registry.register(create_read_file_tool(new_dir, max_output))
-        self.registry.register(create_write_file_tool(new_dir))
-        self.registry.register(create_edit_file_tool(new_dir))
-        self.registry.register(create_glob_tool(new_dir, max_output))
-        self.registry.register(create_grep_tool(new_dir, max_output))
-        self.registry.register(create_bash_tool(new_dir, max_output))
 
-        # Re-discover skills and agents from new workspace
-        self.skill_loader = SkillLoader(new_dir / ".agents" / "skills")
+        # Re-register file tools with the new workspace root
+        self.registry.register(create_read_file_tool(workspace, max_output))
+        self.registry.register(create_write_file_tool(workspace))
+        self.registry.register(create_edit_file_tool(workspace))
+        self.registry.register(create_glob_tool(workspace, max_output))
+        self.registry.register(create_grep_tool(workspace, max_output))
+        self.registry.register(create_bash_tool(workspace, max_output))
+
+        # Re-load skills from root_dir first, then workspace_dir (workspace takes priority)
+        self.skill_loader = SkillLoader(root / ".agents" / "skills")
         self.skill_loader.discover()
+        workspace_skills_dir = workspace / ".agents" / "skills"
+        if workspace_skills_dir.exists():
+            workspace_skill_loader = SkillLoader(workspace_skills_dir)
+            workspace_skill_loader.discover()
+            for skill in workspace_skill_loader.all():
+                self.skill_loader._skills[skill.name] = skill
+
+        # Re-load agents from root_dir first, then workspace_dir (workspace takes priority)
         self.agent_loader = AgentLoader(
-            new_dir / ".agents" / "agents", new_dir / ".agents" / "agents.md"
+            root / ".agents" / "agents", root / ".agents" / "agents.md"
         )
         self.agent_loader.discover()
+        workspace_agents_dir = workspace / ".agents" / "agents"
+        workspace_agents_md = workspace / ".agents" / "agents.md"
+        if workspace_agents_dir.exists() or workspace_agents_md.exists():
+            workspace_agent_loader = AgentLoader(
+                workspace_agents_dir, workspace_agents_md
+            )
+            workspace_agent_loader.discover()
+            for agent in workspace_agent_loader.all():
+                self.agent_loader._agents[agent.name] = agent
 
         # Rebuild system prompt
         system_prompt = build_system_prompt(
-            new_dir,
+            workspace,
             get_tool_descriptions(self.registry.all()),
-            new_dir / "AGENT.md",
+            root / "AGENT.md",
             self.skill_loader.format_for_prompt(),
             self.agent_loader.format_for_prompt(),
             system_prompt_template=self.config.system_prompt_template,
@@ -247,18 +302,6 @@ class Application:
         self._ui.console.print(
             f"[status.success]Workspace changed to:[/status.success] {new_dir}"
         )
-
-        # Welcome header using centralized UI
-        self._ui.welcome_header(str(self.config.model), str(root))
-        self._ui.info(f"Max output tokens per response: {self.config.max_completion_tokens}")
-        self._ui.info(f"Context window budget: {self.config.context_window_tokens}")
-        if self.config.review_model:
-            self._ui.info(f"Review model: {self.config.review_model}")
-        if self.skill_loader.all():
-            self._ui.info(f"Skills loaded: {len(self.skill_loader.all())}")
-        if self.agent_loader.all():
-            self._ui.info(f"Agents loaded: {len(self.agent_loader.all())}")
-        self._ui.console.print("Type [ui.accent]/help[/ui.accent] for commands\n")
 
     # ------------------------------------------------------------------ run
 

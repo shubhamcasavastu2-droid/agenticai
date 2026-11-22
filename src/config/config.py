@@ -156,8 +156,8 @@ class Config:
     completion_review: bool = True
     review_model: str = ""  # empty -> reuse `model`
     log_dir: Path = field(default_factory=lambda: Path("logs"))
-    session_dir: Path | None = None  # None -> <project_root>/.agentic/sessions
-    project_root: Project = field(default_factory=Project.get_instance)
+    session_dir: Path | None = None  # None -> <workspace_dir>/.agentic/sessions
+    root_dir: Project = field(default_factory=Project.get_instance)
     workspace_dir: Path = field(init=False)
     normalizer_system_prompt: str = NORMALIZER_SYSTEM_PROMPT_DEFAULT
     completion_review_prompt: str = COMPLETION_REVIEW_PROMPT_DEFAULT
@@ -165,20 +165,20 @@ class Config:
     user_input_refurbish_prompt: str = USER_INPUT_REFURBISH_PROMPT_DEFAULT
 
     def __post_init__(self) -> None:
-        """Initialize workspace_dir from the project root."""
+        """Initialize workspace_dir from the root_dir."""
         root = (
-            self.project_root.get_products_dir()
-            if hasattr(self.project_root, "get_products_dir")
-            else self.project_root
+            self.root_dir.get_products_dir()
+            if hasattr(self.root_dir, "get_products_dir")
+            else self.root_dir
         )
         self.workspace_dir = root
 
     @property
     def sessions_path(self) -> Path:
         root = (
-            self.project_root.get_products_dir()
-            if hasattr(self.project_root, "get_products_dir")
-            else self.project_root
+            self.workspace_dir
+            if hasattr(self.workspace_dir, "get_products_dir")
+            else self.workspace_dir
         )
         return self.session_dir or (root / ".agentic" / "sessions")
 
@@ -195,7 +195,12 @@ class Config:
         return value
 
     @classmethod
-    def from_env(cls, env_file: Path | None = None, project_root: str | Path | None = None) -> Config:
+    def from_env(
+        cls,
+        env_file: Path | None = None,
+        root_dir: str | Path | None = None,
+        workspace_dir: str | Path | None = None,
+    ) -> Config:
         if env_file and env_file.exists():
             load_dotenv(env_file)
         else:
@@ -210,12 +215,19 @@ class Config:
                     break
 
         session_dir = get_env("AGENTIC_SESSION_DIR")
-        resolved_project_root = (
-            Path(project_root).resolve()
-            if project_root is not None
-            else Path(get_env("AGENTIC_PROJECT_ROOT", ".")).resolve()
+        resolved_root_dir = (
+            Path(root_dir).resolve()
+            if root_dir is not None
+            else Path(get_env("AGENTIC_ROOT_DIR", ".")).resolve()
         )
-        project = get_project_dir().updated_project_dir(resolved_project_root)
+        resolved_workspace_dir = (
+            Path(workspace_dir).resolve()
+            if workspace_dir is not None
+            else Path(get_env("AGENTIC_WORKSPACE_DIR", str(resolved_root_dir))).resolve()
+        )
+        project = get_project_dir()
+        project.set_root_dir(resolved_root_dir)
+        project.set_workspace_dir(resolved_workspace_dir)
         return cls(
             base_url=get_env("AGENTIC_BASE_URL", "http://localhost:11434/v1"),
             api_key=get_env("AGENTIC_API_KEY", "ollama"),
@@ -232,7 +244,7 @@ class Config:
             review_model=get_env("AGENTIC_REVIEW_MODEL", ""),
             log_dir=Path(get_env("AGENTIC_LOG_DIR", "logs")),
             session_dir=Path(session_dir).expanduser() if session_dir else None,
-            project_root=project,
+            root_dir=project,
             normalizer_system_prompt=get_env("AGENTIC_NORMALIZER_SYSTEM_PROMPT", NORMALIZER_SYSTEM_PROMPT_DEFAULT),
             completion_review_prompt=get_env("AGENTIC_COMPLETION_REVIEW_PROMPT", COMPLETION_REVIEW_PROMPT_DEFAULT),
             system_prompt_template=get_env("AGENTIC_SYSTEM_PROMPT_TEMPLATE", SYSTEM_PROMPT_TEMPLATE_DEFAULT),

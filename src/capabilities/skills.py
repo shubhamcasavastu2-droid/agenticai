@@ -63,12 +63,12 @@ class SkillLoader:
         self._skills: dict[str, Skill] = {}
 
     def discover(self) -> dict[str, Skill]:
-        """Discover all skills in the skills directory."""
+        """Discover all skills in the skills directory (recursively)."""
         self._skills.clear()
         if not self.skills_dir.exists():
             return self._skills
 
-        for skill_dir in self.skills_dir.iterdir():
+        for skill_dir in self.skills_dir.rglob("*"):
             if skill_dir.is_dir() and (skill_dir / "SKILL.md").exists():
                 try:
                     skill = Skill.load(skill_dir)

@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from src.config import Config
+from src.config.config import Config
 from src.provider import (
     OpenAICompatibleProvider,
     ProviderAuthenticationError,

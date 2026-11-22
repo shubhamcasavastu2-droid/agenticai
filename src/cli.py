@@ -25,7 +25,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from .commands import build_registry
-from .config import Config
+from .config.config import Config
 from .core.agent import CONTINUATION_STEPS, AgentLoop
 from .core.session import SessionStore
 from .logger import (
@@ -61,7 +61,7 @@ class CLI:
         self.review_provider: OpenAICompatibleProvider | None = None
         self.registry: ToolRegistry = ToolRegistry()
         self.permission_gate = PermissionGate(
-            config.project_root, default_auto_allow=READ_ONLY_TOOLS
+            config.root_dir, default_auto_allow=READ_ONLY_TOOLS
         )
         self.agent_loop: AgentLoop | None = None
         self.completion_resolver: Any = None
