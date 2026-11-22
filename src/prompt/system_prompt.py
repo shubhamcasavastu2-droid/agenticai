@@ -6,6 +6,8 @@ This module constructs the system prompt sent to the language model, including:
 - Tool descriptions with JSON schemas
 - Core rules and style guidelines
 - Optional AGENT.md project instructions loading
+- Skills and agents auto-loaded from .agents folders (root_dir + workspace_dir)
+  with tagging: [EXISTING] for root_dir, [NEW] for workspace_dir
 - Input normalization/refurbishment prompts
 
 The system prompt is built dynamically at runtime to reflect the current
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import os
 import platform
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -86,6 +89,62 @@ Tasks to achieve:
 """
 
 
+@dataclass
+class SkillInfo:
+    """Details about a discovered skill."""
+    name: str
+    description: str
+    path: str
+    source: str  # "root" or "workspace"
+    tag: str  # "[EXISTING]" for root, "[NEW]" for workspace
+
+
+@dataclass
+class AgentInfo:
+    """Details about a discovered agent."""
+    name: str
+    description: str
+    path: str
+    source: str  # "root" or "workspace"
+    tag: str  # "[EXISTING]" for root, "[NEW]" for workspace
+
+
+def build_skills_section(skills: list[SkillInfo]) -> str:
+    """Build the skills section for the system prompt with tagging.
+
+    Each skill is listed with its name (tagged [EXISTING] or [NEW]),
+    description, path, and source.
+    """
+    if not skills:
+        return ""
+
+    lines = ["# Available Skills (auto-loaded from .agents folders)"]
+    for s in skills:
+        lines.append(f"- **{s.name}** {s.tag}")
+        lines.append(f"  Description: {s.description}")
+        lines.append(f"  Path: {s.path}")
+        lines.append(f"  Source: {s.source}")
+    return "\n".join(lines)
+
+
+def build_agents_section(agents: list[AgentInfo]) -> str:
+    """Build the agents section for the system prompt with tagging.
+
+    Each agent is listed with its name (tagged [EXISTING] or [NEW]),
+    description, path, and source.
+    """
+    if not agents:
+        return ""
+
+    lines = ["# Available Agents (auto-loaded from .agents folders)"]
+    for a in agents:
+        lines.append(f"- **{a.name}** {a.tag}")
+        lines.append(f"  Description: {a.description}")
+        lines.append(f"  Path: {a.path}")
+        lines.append(f"  Source: {a.source}")
+    return "\n".join(lines)
+
+
 def build_system_prompt(
     project_root: Path,
     tool_descriptions: str,
@@ -135,6 +194,7 @@ def build_user_input_refurbish_prompt(
     user_input_refurbish_prompt: str = USER_INPUT_REFUBISH_PROMPT,
 ) -> str:
     return user_input_refurbish_prompt.format(user_input=user_input)
+
 
 def get_tool_descriptions(tools: list) -> str:
     lines = []

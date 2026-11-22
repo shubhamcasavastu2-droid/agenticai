@@ -4,10 +4,10 @@ Application Layer for Agentic CLI.
 This module provides the Application class that orchestrates the entire system:
 - Initializes all components (provider, CLI, tools, permissions, completion resolver)
 - Registers built-in tools (read_file, write_file, edit_file, glob, grep, bash, ask_user, plan, todo)
-- Loads skills and agents from the capabilities system
-- Builds the system prompt with tool descriptions
+- Loads skills and agents from the capabilities system (root_dir + workspace_dir)
+- Builds the system prompt with tool descriptions and tagged skills/agents
 - Runs the main agent loop with completion review
-- Handles provider authentication and timeout errors
+- On every user input, refreshes .agents folders and rebuilds system prompt
 
 The Application separates initialization concerns from the CLI's terminal/UI concerns.
 """
@@ -28,6 +28,10 @@ from .logger import (
     log_exception,
 )
 from .prompt.system_prompt import (
+    AgentInfo,
+    SkillInfo,
+    build_agents_section,
+    build_skills_section,
     build_system_prompt,
     get_tool_descriptions,
 )
@@ -129,6 +133,131 @@ class Application:
 
     # ------------------------------------------------------------------ initialization
 
+    def _build_skills_info(
+        self, skill_loader: SkillLoader, root_skills_dir: Path, workspace_skills_dir: Path
+    ) -> list[SkillInfo]:
+        """Build SkillInfo list with tagging: [EXISTING] for root, [NEW] for workspace."""
+        skills: list[SkillInfo] = []
+
+        # Root skills are [EXISTING]
+        for skill in skill_loader.all():
+            skills.append(
+                SkillInfo(
+                    name=skill.name,
+                    description=skill.description or "",
+                    path=str(skill.path),
+                    source="root",
+                    tag="[EXISTING]",
+                )
+            )
+
+        # Workspace skills are [NEW] (or override root)
+        if workspace_skills_dir.exists():
+            ws_loader = SkillLoader(workspace_skills_dir)
+            ws_loader.discover()
+            for skill in ws_loader.all():
+                skills.append(
+                    SkillInfo(
+                        name=skill.name,
+                        description=skill.description or "",
+                        path=str(skill.path),
+                        source="workspace",
+                        tag="[NEW]",
+                    )
+                )
+
+        return skills
+
+    def _build_agents_info(
+        self, agent_loader: AgentLoader, root_agents_dir: Path, workspace_agents_dir: Path
+    ) -> list[AgentInfo]:
+        """Build AgentInfo list with tagging: [EXISTING] for root, [NEW] for workspace."""
+        agents: list[AgentInfo] = []
+
+        # Root agents are [EXISTING]
+        for agent in agent_loader.all():
+            agents.append(
+                AgentInfo(
+                    name=agent.name,
+                    description=agent.description or "",
+                    path=str(agent.path if hasattr(agent, "path") else ""),
+                    source="root",
+                    tag="[EXISTING]",
+                )
+            )
+
+        # Workspace agents are [NEW]
+        if workspace_agents_dir.exists():
+            ws_loader = AgentLoader(workspace_agents_dir, None)
+            ws_loader.discover()
+            for agent in ws_loader.all():
+                agents.append(
+                    AgentInfo(
+                        name=agent.name,
+                        description=agent.description or "",
+                        path=str(agent.path if hasattr(agent, "path") else ""),
+                        source="workspace",
+                        tag="[NEW]",
+                    )
+                )
+
+        return agents
+
+    def _refresh_skills_agents(self) -> tuple[list[SkillInfo], list[AgentInfo]]:
+        """Refresh skills and agents from both root_dir and workspace_dir.
+
+        Root dir is loaded first (existing), workspace dir second (new/override).
+        Returns (skills_info, agents_info) lists with tagging.
+        """
+        root = (
+            self.config.root_dir.get_products_dir()
+            if hasattr(self.config.root_dir, "get_products_dir")
+            else self.config.root_dir
+        )
+        workspace = (
+            self.config.workspace_dir
+            if hasattr(self.config.workspace_dir, "get_products_dir")
+            else self.config.workspace_dir
+        )
+
+        # Load root skills/agents first
+        root_skills_dir = root / ".agents" / "skills"
+        root_agents_dir = root / ".agents" / "agents"
+        root_agents_md = root / ".agents" / "agents.md"
+
+        self.skill_loader = SkillLoader(root_skills_dir)
+        self.skill_loader.discover()
+
+        self.agent_loader = AgentLoader(root_agents_dir, root_agents_md)
+        self.agent_loader.discover()
+
+        # Then load workspace skills/agents (workspace takes priority / tagged as [NEW])
+        workspace_skills_dir = workspace / ".agents" / "skills"
+        workspace_agents_dir = workspace / ".agents" / "agents"
+        workspace_agents_md = workspace / ".agents" / "agents.md"
+
+        if workspace_skills_dir.exists():
+            ws_skill_loader = SkillLoader(workspace_skills_dir)
+            ws_skill_loader.discover()
+            for skill in ws_skill_loader.all():
+                self.skill_loader._skills[skill.name] = skill
+
+        if workspace_agents_dir.exists() or workspace_agents_md.exists():
+            ws_agent_loader = AgentLoader(workspace_agents_dir, workspace_agents_md)
+            ws_agent_loader.discover()
+            for agent in ws_agent_loader.all():
+                self.agent_loader._agents[agent.name] = agent
+
+        # Build tagged info lists
+        skills_info = self._build_skills_info(
+            self.skill_loader, root_skills_dir, workspace_skills_dir
+        )
+        agents_info = self._build_agents_info(
+            self.agent_loader, root_agents_dir, workspace_agents_dir
+        )
+
+        return skills_info, agents_info
+
     async def initialize(self) -> None:
         await self.rebuild_providers()
         assert self.provider is not None
@@ -139,7 +268,7 @@ class Application:
             enabled=self.config.completion_review,
             completion_review_prompt=self.config.completion_review_prompt,
             cli=self.cli,
-            config=self.config
+            config=self.config,
         )
 
         root = (
@@ -164,39 +293,15 @@ class Application:
         self.registry.register(create_todo_tool(self.cli._todo_callback))
         self.registry.register(create_change_workspace_tool())
 
-        # Load skills from root_dir first, then workspace_dir (workspace takes priority)
-        self.skill_loader = SkillLoader(root / ".agents" / "skills")
-        self.skill_loader.discover()
-        workspace_skills_dir = workspace / ".agents" / "skills"
-        if workspace_skills_dir.exists():
-            workspace_skill_loader = SkillLoader(workspace_skills_dir)
-            workspace_skill_loader.discover()
-            # Workspace skills override root skills with same name
-            for skill in workspace_skill_loader.all():
-                self.skill_loader._skills[skill.name] = skill
-
-        # Load agents from root_dir first, then workspace_dir (workspace takes priority)
-        self.agent_loader = AgentLoader(
-            root / ".agents" / "agents", root / ".agents" / "agents.md"
-        )
-        self.agent_loader.discover()
-        workspace_agents_dir = workspace / ".agents" / "agents"
-        workspace_agents_md = workspace / ".agents" / "agents.md"
-        if workspace_agents_dir.exists() or workspace_agents_md.exists():
-            workspace_agent_loader = AgentLoader(
-                workspace_agents_dir, workspace_agents_md
-            )
-            workspace_agent_loader.discover()
-            # Workspace agents override root agents with same name
-            for agent in workspace_agent_loader.all():
-                self.agent_loader._agents[agent.name] = agent
+        # Refresh skills/agents from both root_dir and workspace_dir
+        skills_info, agents_info = self._refresh_skills_agents()
 
         system_prompt = build_system_prompt(
-            root,
+            workspace,
             get_tool_descriptions(self.registry.all()),
             root / "AGENT.md",
-            self.skill_loader.format_for_prompt(),
-            self.agent_loader.format_for_prompt(),
+            build_skills_section(skills_info),
+            build_agents_section(agents_info),
             system_prompt_template=self.config.system_prompt_template,
         )
         self.agent_loop = AgentLoop(
@@ -259,37 +364,15 @@ class Application:
         self.registry.register(create_bash_tool(workspace, max_output))
 
         # Re-load skills from root_dir first, then workspace_dir (workspace takes priority)
-        self.skill_loader = SkillLoader(root / ".agents" / "skills")
-        self.skill_loader.discover()
-        workspace_skills_dir = workspace / ".agents" / "skills"
-        if workspace_skills_dir.exists():
-            workspace_skill_loader = SkillLoader(workspace_skills_dir)
-            workspace_skill_loader.discover()
-            for skill in workspace_skill_loader.all():
-                self.skill_loader._skills[skill.name] = skill
-
-        # Re-load agents from root_dir first, then workspace_dir (workspace takes priority)
-        self.agent_loader = AgentLoader(
-            root / ".agents" / "agents", root / ".agents" / "agents.md"
-        )
-        self.agent_loader.discover()
-        workspace_agents_dir = workspace / ".agents" / "agents"
-        workspace_agents_md = workspace / ".agents" / "agents.md"
-        if workspace_agents_dir.exists() or workspace_agents_md.exists():
-            workspace_agent_loader = AgentLoader(
-                workspace_agents_dir, workspace_agents_md
-            )
-            workspace_agent_loader.discover()
-            for agent in workspace_agent_loader.all():
-                self.agent_loader._agents[agent.name] = agent
+        skills_info, agents_info = self._refresh_skills_agents()
 
         # Rebuild system prompt
         system_prompt = build_system_prompt(
             workspace,
             get_tool_descriptions(self.registry.all()),
             root / "AGENT.md",
-            self.skill_loader.format_for_prompt(),
-            self.agent_loader.format_for_prompt(),
+            build_skills_section(skills_info),
+            build_agents_section(agents_info),
             system_prompt_template=self.config.system_prompt_template,
         )
         self.agent_loop.system_prompt = system_prompt
@@ -303,10 +386,51 @@ class Application:
             f"[status.success]Workspace changed to:[/status.success] {new_dir}"
         )
 
+    async def refresh_agents_skills_on_input(self) -> None:
+        """Refresh skills and agents from .agents folders on every user input.
+
+        Re-discovers skills/agents from both root_dir and workspace_dir,
+        rebuilds the system prompt with tagged info, and updates the agent loop.
+        This ensures new skills/agents added to .agents folders are picked up
+        immediately without restarting the CLI.
+        """
+        skills_info, agents_info = self._refresh_skills_agents()
+
+        root = (
+            self.config.root_dir.get_products_dir()
+            if hasattr(self.config.root_dir, "get_products_dir")
+            else self.config.root_dir
+        )
+        workspace = (
+            self.config.workspace_dir
+            if hasattr(self.config.workspace_dir, "get_products_dir")
+            else self.config.workspace_dir
+        )
+
+        system_prompt = build_system_prompt(
+            workspace,
+            get_tool_descriptions(self.registry.all()),
+            root / "AGENT.md",
+            build_skills_section(skills_info),
+            build_agents_section(agents_info),
+            system_prompt_template=self.config.system_prompt_template,
+        )
+        if self.agent_loop:
+            self.agent_loop.system_prompt = system_prompt
+
+        # Update CLI references
+        self.cli.registry = self.registry
+        self.cli.skill_loader = self.skill_loader
+        self.cli.agent_loader = self.agent_loader
+
     # ------------------------------------------------------------------ run
 
     async def run(self) -> None:
-        """Main application loop: owns agent loop execution, delegates UI to CLI."""
+        """Main application loop: owns agent loop execution, delegates UI to CLI.
+
+        On every user input, refreshes .agents folders and rebuilds the system
+        prompt so newly added skills/agents are immediately available.
+        """
         await self.initialize()
         while self.cli.running:
             try:
@@ -315,6 +439,9 @@ class Application:
                     continue
                 if not self.agent_loop:
                     continue
+
+                # Refresh skills/agents from .agents folders on every input
+                await self.refresh_agents_skills_on_input()
 
                 assert self.completion_resolver is not None
                 normalized_input = await self.completion_resolver.normalize_input(user_input)

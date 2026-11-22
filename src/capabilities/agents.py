@@ -38,6 +38,7 @@ class Agent:
     permissions: dict[str, str] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
     content: str = ""
+    path: str = ""  # Path to the agent file
 
     @classmethod
     def load(cls, agent_file: Path) -> Agent:
@@ -65,6 +66,7 @@ class Agent:
             permissions=frontmatter.get("permissions", {}),
             metadata=frontmatter.get("metadata", {}),
             content=body,
+            path=str(agent_file),
         )
 
     def format_for_prompt(self) -> str:
