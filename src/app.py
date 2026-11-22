@@ -14,10 +14,13 @@ The Application separates initialization concerns from the CLI's terminal/UI con
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from .capabilities.agents import AgentLoader
 from .capabilities.skills import SkillLoader
 from .cli import CLI
 from .config.config import Config
+from .config.project_dir import Project
 from .core.agent import AgentLoop
 from .core.completion import CompletionResolver
 from .logger import (
@@ -38,6 +41,7 @@ from .tools import (
     ToolRegistry,
     create_ask_user_tool,
     create_bash_tool,
+    create_change_workspace_tool,
     create_edit_file_tool,
     create_glob_tool,
     create_grep_tool,
@@ -56,6 +60,7 @@ class Application:
     def __init__(self, config: Config):
         self.config = config
         self.cli = CLI(config)
+        self.cli.app = self  # Back-reference for slash commands to trigger refresh
         self.providers: dict[str, OpenAICompatibleProvider] = {}
         self.provider: OpenAICompatibleProvider | None = None
         self.review_provider: OpenAICompatibleProvider | None = None
@@ -147,6 +152,7 @@ class Application:
         self.registry.register(create_ask_user_tool(self.cli.ask_user))
         self.registry.register(create_plan_tool(self.cli.present_plan))
         self.registry.register(create_todo_tool(self.cli._todo_callback))
+        self.registry.register(create_change_workspace_tool())
 
         self.skill_loader = SkillLoader(root / ".agents" / "skills")
         self.skill_loader.discover()
@@ -188,6 +194,59 @@ class Application:
         self.cli.completion_resolver = self.completion_resolver
         self.cli.skill_loader = self.skill_loader
         self.cli.agent_loader = self.agent_loader
+
+    async def refresh_workspace(self, new_workspace_dir: str | Path) -> None:
+        """Re-initialize all workspace-dependent components after a workspace change.
+
+        Updates the Project singleton, re-registers all file tools with the new
+        root, re-discovers skills and agents, and rebuilds the system prompt.
+        """
+        from pathlib import Path
+
+        new_dir = Path(new_workspace_dir).expanduser().resolve()
+
+        if not new_dir.is_dir():
+            raise ValueError(f"'{new_dir}' is not a valid directory")
+
+        # Update the Project singleton
+        Project.set_project_dir(new_dir)
+
+        # Re-register file tools with the new root
+        max_output = self.config.max_output_size
+        self.registry.register(create_read_file_tool(new_dir, max_output))
+        self.registry.register(create_write_file_tool(new_dir))
+        self.registry.register(create_edit_file_tool(new_dir))
+        self.registry.register(create_glob_tool(new_dir, max_output))
+        self.registry.register(create_grep_tool(new_dir, max_output))
+        self.registry.register(create_bash_tool(new_dir, max_output))
+
+        # Re-discover skills and agents from new workspace
+        self.skill_loader = SkillLoader(new_dir / ".agents" / "skills")
+        self.skill_loader.discover()
+        self.agent_loader = AgentLoader(
+            new_dir / ".agents" / "agents", new_dir / ".agents" / "agents.md"
+        )
+        self.agent_loader.discover()
+
+        # Rebuild system prompt
+        system_prompt = build_system_prompt(
+            new_dir,
+            get_tool_descriptions(self.registry.all()),
+            new_dir / "AGENT.md",
+            self.skill_loader.format_for_prompt(),
+            self.agent_loader.format_for_prompt(),
+            system_prompt_template=self.config.system_prompt_template,
+        )
+        self.agent_loop.system_prompt = system_prompt
+
+        # Update CLI references
+        self.cli.registry = self.registry
+        self.cli.skill_loader = self.skill_loader
+        self.cli.agent_loader = self.agent_loader
+
+        self._ui.console.print(
+            f"[status.success]Workspace changed to:[/status.success] {new_dir}"
+        )
 
         # Welcome header using centralized UI
         self._ui.welcome_header(str(self.config.model), str(root))

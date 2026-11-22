@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from .ask_tool import create_ask_user_tool
 from .bash_tool import create_bash_tool
+from .change_workspace import create_change_workspace_tool
 from .edit_file import EditFileError, create_edit_file_tool
 from .glob_tool import create_glob_tool
 from .grep_tool import create_grep_tool
@@ -42,4 +43,5 @@ __all__ = [
     "create_ask_user_tool",
     "create_plan_tool",
     "create_todo_tool",
+    "create_change_workspace_tool",
 ]

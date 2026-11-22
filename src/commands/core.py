@@ -72,6 +72,32 @@ async def exit_command(cli: CLI, args: list[str]) -> None:
     await cli.close()
 
 
+async def workspace_command(cli: CLI, args: list[str]) -> None:
+    """Change or show the current workspace directory."""
+    from ..config.project_dir import Project
+
+    if not args:
+        current = Project.get_instance().project_root
+        cli.console.print(
+            f"[ui.subheader]Current workspace:[/ui.subheader]  [cyan]{current}[/cyan]"
+        )
+        cli.console.print("Usage: /workspace <directory-path>")
+        return
+
+    new_dir = args[0]
+    cli.console.print(f"[status.info]Changing workspace to:[/status.info] {new_dir}")
+
+    # Call the Application's refresh_workspace to update Project singleton
+    # and re-register all tools with the new root
+    app = getattr(cli, "app", None)
+    if app is not None:
+        await app.refresh_workspace(new_dir)
+    else:
+        # Fallback: update Project singleton directly
+        Project.set_project_dir(new_dir)
+        cli.console.print(f"[status.success]Workspace changed to:[/status.success] {new_dir}")
+
+
 async def resume_command(cli: CLI, args: list[str]) -> None:
     if args and args[0] == "list":
         sessions = cli.session.list_sessions()
@@ -108,3 +134,4 @@ def register(registry: CommandRegistry) -> None:
     registry.add("model", "/model [name]", "Show or change the model", model_command)
     registry.add("resume", "/resume [list|<session-id>]", "List or resume a saved session", resume_command)
     registry.add("exit", "/exit", "Exit the CLI", exit_command)
+    registry.add("workspace", "/workspace [path]", "Show or change workspace directory", workspace_command)
