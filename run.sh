@@ -20,4 +20,4 @@ cd "$BACKEND_DIR"
 uv sync --extra dev >/dev/null 2>&1 || true
 
 # Run the agentic CLI, forwarding all arguments
-exec uv run python -m src.cli "$@"
+exec uv run python -m src.main "$@"
