@@ -22,7 +22,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-SYSTEM_PROMPT_TEMPLATE = """You are an agentic coding assistant in a terminal. You read, search, edit and run code in the user's project using the tools below.
+SYSTEM_PROMPT_TEMPLATE = """
+You are an agentic coding assistant in a terminal. 
+You read, search, edit and run code in the user's project using the tools below.
 
 # Environment
 - Working directory: {working_dir}

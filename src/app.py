@@ -81,7 +81,7 @@ class Application:
             else config.workspace_dir
         )
         self.permission_gate = PermissionGate(
-            config.root_dir, default_auto_allow=READ_ONLY_TOOLS
+            config.workspace_dir, default_auto_allow=READ_ONLY_TOOLS
         )
         self.project_dir = self.workspace_dir
         self.agent_loop: AgentLoop | None = None
