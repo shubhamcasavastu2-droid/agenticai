@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The workspace directory is passed as the first command-line argument.
-# If omitted, fall back to the caller's current working directory.
-if [[ $# -gt 0 ]]; then
-    WORKSPACE_DIR="$1"
-    shift
-else
-    WORKSPACE_DIR="$(pwd)"
-fi
+# Workspace directory defaults to the directory where this script lives.
+# This lets you run ./run.sh from anywhere — the script's own folder is
+# always treated as the workspace.
+WORKSPACE_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)}"
 
 # Normalize to an absolute path.
 WORKSPACE_DIR="$(cd -- "$WORKSPACE_DIR" && pwd)"
@@ -19,9 +15,12 @@ BACKEND_DIR="$WORKSPACE_DIR/backend"
 if [[ ! -d "$BACKEND_DIR" ]]; then
     echo "Error: backend directory not found at $BACKEND_DIR" >&2
     echo "Usage: $0 [workspace-dir] [cli-args...]" >&2
-    echo "  workspace-dir : folder containing backend/ (defaults to current directory)" >&2
+    echo "  workspace-dir : folder containing backend/ (defaults to this script's dir)" >&2
     exit 1
 fi
+
+# Shift off the workspace-dir argument so the rest are forwarded to the CLI.
+shift
 
 cd "$BACKEND_DIR"
 
