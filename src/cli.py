@@ -235,25 +235,25 @@ class CLI:
             return False, "Non-interactive mode: tool not pre-allowed"
 
         self._ui.tool_table(tool_name, args, is_error=False)
-        self._ui.console.print(
-            "\n[y] Allow once  [a] Allow always  [u] Auto-allow  [n] Deny  [d] Deny always"
-        )
 
-        choice = self._ui.prompt("Permission", choices=["y", "a", "u", "n", "d"], default="n")
-        if choice == "y":
+        from .security.permission_prompt import prompt_permission
+
+        choice = prompt_permission(tool_name, args)
+        if choice == "allow_once":
+            self._ui.success(f"Allowed once: {tool_name}")
             log_permission(tool_name, True, "Allowed once")
             return True, None
-        if choice == "a":
+        if choice == "allow_always":
             gate.allow_always(tool_name)
             self._ui.success(f"Always allowed: {tool_name}")
             log_permission(tool_name, True, "Always allowed")
             return True, None
-        if choice == "u":
+        if choice == "auto_allow":
             gate.allow_auto(tool_name)
             self._ui.success(f"Auto-allowed: {tool_name} (no prompts this session)")
             log_permission(tool_name, True, "Auto-allowed")
             return True, None
-        if choice == "d":
+        if choice == "deny_always":
             gate.deny(tool_name)
             self._ui.error(f"Always denied: {tool_name}")
             log_permission(tool_name, False, "Denied always")
