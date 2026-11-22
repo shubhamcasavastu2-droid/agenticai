@@ -291,7 +291,7 @@ class Application:
         self.registry.register(create_ask_user_tool(self.cli.ask_user))
         self.registry.register(create_plan_tool(self.cli.present_plan))
         self.registry.register(create_todo_tool(self.cli._todo_callback))
-        self.registry.register(create_change_workspace_tool())
+        self.registry.register(create_change_workspace_tool(self.refresh_workspace))
 
         # Refresh skills/agents from both root_dir and workspace_dir
         skills_info, agents_info = self._refresh_skills_agents()
@@ -344,8 +344,10 @@ class Application:
         if not new_dir.is_dir():
             raise ValueError(f"'{new_dir}' is not a valid directory")
 
-        # Update only the workspace_dir in Project singleton; root_dir stays constant
+        # Update the workspace_dir in Project singleton; root_dir stays constant
         Project.set_workspace_dir(new_dir)
+        # Also update the config's workspace_dir
+        self.config.workspace_dir = new_dir
 
         root = (
             self.config.root_dir.get_products_dir()

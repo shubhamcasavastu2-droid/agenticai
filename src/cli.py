@@ -254,7 +254,7 @@ class CLI:
                 Message.user(
                     build_user_input_refurbish_prompt(
                         user_input,
-                        user_input_refurbish_prompt=self.config.user_input_refurbish_prompt,
+                        prompt_template=self.config.user_input_refurbish_prompt,
                     )
                 )
             ],
@@ -269,6 +269,8 @@ class CLI:
             return normalized_text
         self._ui.input_normalized(normalized_text)
         return normalized_text
+
+
 
     async def _clarify_empty_response(self, question: str) -> str:
         return await self.ask_user(question, None)

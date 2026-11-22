@@ -7,6 +7,7 @@ Only updates workspace_dir; root_dir (where global skills/agents live) stays con
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from ..config.project_dir import Project
@@ -30,9 +31,13 @@ CHANGE_WORKSPACE_SCHEMA = ToolSchema(
     },
 )
 
+# Callback type for workspace refresh (re-registers tools, reloads skills/agents, rebuilds system prompt)
+WorkspaceRefreshCallback = Callable[[str | Path], Awaitable[None]]
+
 
 class ChangeWorkspaceTool(Tool):
-    def __init__(self) -> None:
+    def __init__(self, refresh_callback: WorkspaceRefreshCallback | None = None) -> None:
+        self.refresh_callback = refresh_callback
         super().__init__(
             name="change_workspace",
             description=CHANGE_WORKSPACE_SCHEMA.description,
@@ -54,6 +59,10 @@ class ChangeWorkspaceTool(Tool):
         # Update only workspace_dir in the Project singleton; root_dir stays constant
         Project.set_workspace_dir(new_dir)
 
+        # If a refresh callback is provided, call it to re-register tools, reload skills/agents, etc.
+        if self.refresh_callback:
+            await self.refresh_callback(new_dir)
+
         return (
             f"Workspace changed to: {new_dir}\n"
             f"Root dir (skills/agents): {Project.get_instance().root_dir}\n"
@@ -61,5 +70,7 @@ class ChangeWorkspaceTool(Tool):
         )
 
 
-def create_change_workspace_tool() -> ChangeWorkspaceTool:
-    return ChangeWorkspaceTool()
+def create_change_workspace_tool(
+    refresh_callback: WorkspaceRefreshCallback | None = None
+) -> ChangeWorkspaceTool:
+    return ChangeWorkspaceTool(refresh_callback)

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..logger import log_info, log_warning
-from ..prompt.system_prompt import build_user_input_refurbish_prompt
+from ..prompt.system_prompt import build_input_normalization_prompt
 from ..provider import Provider, ProviderTimeoutError
 from ..types import Message, ReasoningBlock, TextBlock, ToolCall, ToolResult
 from .agent import AgentLoop
@@ -88,8 +88,8 @@ class CompletionResolver:
             system=self.config.normalizer_system_prompt,
             messages=[
                 Message.user(
-                    build_user_input_refurbish_prompt(
-                        user_input, user_input_refurbish_prompt=self.config.user_input_refurbish_prompt
+                    build_input_normalization_prompt(
+                        user_input
                     )
                 )
             ],
