@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agentic-cli = "src.cli:main_sync"
+agentic-cli = "src.main:main_sync"
 
 [project.optional-dependencies]
 dev = [
