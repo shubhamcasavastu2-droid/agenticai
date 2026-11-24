@@ -135,16 +135,29 @@ class CLI:
     # ------------------------------------------------------------------ slash commands
 
     async def handle_slash_command(self, cmd: str) -> None:
+        """Route slash commands to the appropriate processor via Application.
+
+        If input starts with '/', it's routed to the command processor.
+        Otherwise, it's treated as normal agent input (handled by Application.run()).
+        """
         parts = cmd.split()
+        cmd_name = parts[0].lstrip("/")
         log_command(cmd)
-        command = self.commands.get(parts[0])
-        if command is None:
-            self._ui.console.print(f"[status.error]Unknown command:[/status.error] {parts[0]}")
-            help_command = self.commands.get("help")
-            if help_command:
-                await help_command.handler(self, [])
-            return
-        await command.handler(self, parts[1:])
+
+        # Delegate to Application's processor routing
+        app = getattr(self, "app", None)
+        if app is not None:
+            await app._handle_slash_command(cmd)
+        else:
+            # Fallback: try old commands registry
+            command = self.commands.get(parts[0])
+            if command is None:
+                self._ui.console.print(f"[status.error]Unknown command:[/status.error] {parts[0]}")
+                help_command = self.commands.get("help")
+                if help_command:
+                    await help_command.handler(self, [])
+                return
+            await command.handler(self, parts[1:])
 
     def _save_session(self) -> None:
         if not isinstance(self.agent_loop, AgentLoop) or not self.agent_loop.state.messages:

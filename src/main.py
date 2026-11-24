@@ -1,16 +1,24 @@
+"""
+Main entry point for the Agentic CLI.
+
+Loads configuration and starts the Application.
+"""
+
 from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 
 from .app import Application
-from .config.config import Config
+from .config.config import Config, load_config
 from .logger import setup_logging
 
 
 async def main() -> None:
-    config = Config.from_env()
-    setup_logging(config.log_dir)
+    """Async main entry point."""
+    config = load_config()
+    setup_logging(config.model.log_dir)
     app = Application(config)
     try:
         await app.run()
@@ -18,7 +26,10 @@ async def main() -> None:
         await app.close()
 
 
-def main_sync(root_dir: str | None = None, workspace_dir: str | None = None) -> None:
+def main_sync(
+    root_dir: str | None = None,
+    workspace_dir: str | None = None,
+) -> None:
     """Synchronous entry point for console script.
 
     Args:
@@ -26,8 +37,11 @@ def main_sync(root_dir: str | None = None, workspace_dir: str | None = None) -> 
         workspace_dir: Changeable working directory. If None, defaults to root_dir.
     """
     try:
-        config = Config.from_env(root_dir=root_dir, workspace_dir=workspace_dir)
-        setup_logging(config.log_dir)
+        config = load_config(
+            root_dir=root_dir,
+            workspace_dir=workspace_dir,
+        )
+        setup_logging(config.model.log_dir)
         app = Application(config)
         try:
             asyncio.run(app.run())
@@ -57,3 +71,9 @@ def _parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = _parse_args()
     main_sync(root_dir=args.root_dir, workspace_dir=args.workspace)
+
+
+# Also expose main as a callable for console_scripts
+def run() -> None:
+    """Console script entry point."""
+    main_sync()
