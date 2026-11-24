@@ -24,7 +24,7 @@ from typing import Any
 import httpx
 
 from ..logger import log_warning
-from ..models import MessageModel
+from ..models import MessageModel as MessageModel
 from ..types import (
     Block,
     Message,

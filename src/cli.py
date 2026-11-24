@@ -3,7 +3,8 @@ Command-Line Interface for Agentic CLI.
 
 This module implements the terminal front-end including:
 - REPL (Read-Eval-Print Loop) for user interaction
-- Slash command registry and execution (/help, /clear, /model, /resume, /permission, /skills, /agents, /plan, /ask, /exit)
+- Slash command registry and execution (/help, /clear, /model, /resume,
+  /permission, /skills, /agents, /plan, /ask, /exit)
 - Permission callbacks for tool approval
 - Display formatting with Rich
 - Session management and resumption
@@ -141,7 +142,6 @@ class CLI:
         Otherwise, it's treated as normal agent input (handled by Application.run()).
         """
         parts = cmd.split()
-        cmd_name = parts[0].lstrip("/")
         log_command(cmd)
 
         # Delegate to Application's processor routing

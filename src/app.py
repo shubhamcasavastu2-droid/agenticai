@@ -28,25 +28,21 @@ from .core.session import SessionStore
 from .logger import (
     log_error,
     log_exception,
-    log_info,
 )
-from .models import SessionModel, TaskStatus
+from .models import SessionModel
+from .processor import (
+    PROCESSOR_CLASSES,
+    BaseProcessor,
+)
 from .prompt import (
-    build_agents_section,
-    build_skills_section,
-    get_command_allowed_tools,
-    get_command_summary,
-    get_processor_class,
+    build_system_prompt,
+    get_processor_summary,
     get_tool_descriptions,
 )
 from .provider import (
     OpenAICompatibleProvider,
     ProviderAuthenticationError,
     ProviderTimeoutError,
-)
-from .processor import (
-    PROCESSOR_CLASSES,
-    BaseProcessor,
 )
 from .security.permissions import READ_ONLY_TOOLS, PermissionGate
 from .tools import (
@@ -265,17 +261,15 @@ class Application:
         self.workspace_dir = new_dir
         self.project_dir = new_dir
 
-        root = self.root_dir
-        workspace = new_dir
         max_output = self.config.model.max_output_size
 
         # Re-register file tools with the new workspace root
-        self.registry.register(create_read_file_tool(workspace, max_output))
-        self.registry.register(create_write_file_tool(workspace))
-        self.registry.register(create_edit_file_tool(workspace))
-        self.registry.register(create_glob_tool(workspace, max_output))
-        self.registry.register(create_grep_tool(workspace, max_output))
-        self.registry.register(create_bash_tool(workspace, max_output))
+        self.registry.register(create_read_file_tool(new_dir, max_output))
+        self.registry.register(create_write_file_tool(new_dir))
+        self.registry.register(create_edit_file_tool(new_dir))
+        self.registry.register(create_glob_tool(new_dir, max_output))
+        self.registry.register(create_grep_tool(new_dir, max_output))
+        self.registry.register(create_bash_tool(new_dir, max_output))
 
         # Re-load skills/agents
         self._load_skills_agents()
@@ -298,7 +292,6 @@ class Application:
         """Refresh skills and agents from .agents folders on every user input."""
         self._load_skills_agents()
 
-        workspace = self.workspace_dir
         system_prompt = self._build_system_prompt("agents-default")
         if self.agent_loop:
             self.agent_loop.system_prompt = system_prompt
@@ -388,14 +381,18 @@ class Application:
         """
         parts = user_input.split()
         cmd_name = parts[0].lstrip("/")
-        cmd_args = parts[1:] if len(parts) > 1 else []
 
         processor = self.get_or_create_processor(cmd_name)
         if processor is None:
+            # Fall back to the CLI's legacy command registry
+            cmd = self.cli.commands.get(parts[0])
+            if cmd is not None:
+                await cmd.handler(self.cli, parts[1:])
+                return
             self._ui.console.print(
                 f"[status.error]Unknown command:[/status.error] /{cmd_name}"
             )
-            self._ui.console.print("Available commands: " + ", ".join(get_processor_summary()))
+            self._ui.console.print("Available commands: " + ", ".join(f"/{k}" for k in get_processor_summary()))
             return
 
         # Process through the command processor

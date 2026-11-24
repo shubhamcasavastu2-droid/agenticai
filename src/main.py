@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
 
 from .app import Application
-from .config.config import Config, load_config
+from .config.config import load_config
 from .logger import setup_logging
 
 

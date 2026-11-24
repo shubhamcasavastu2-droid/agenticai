@@ -1,4 +1,21 @@
-"""Slash-command registry. Each command module registers its handlers in `build_registry()`."""
+"""
+Slash-command registry for Agentic CLI.
+
+This package provides the command registration system and organizes slash commands
+into sub-packages:
+
+- ``agents``      - Agent listing and inspection (/agents)
+- ``ask``         - Question asking with optional choices (/ask)
+- ``plan``        - Plan creation and approval (/plan)
+- ``session``     - Session management: list, resume, switch, new (/session)
+- ``scheduler``   - Schedule management (TODO placeholder) (/schedule)
+- ``skillsCommand``  - Skill listing, inspection, and creation (/skills)
+- ``agentCommand`` - Agent creation and inspection (/agent)
+- ``hook``        - Hook management (TODO placeholder) (/hook)
+
+Core commands (help, clear, model, exit, workspace, resume) remain in
+``commands.core``.
+"""
 
 from __future__ import annotations
 
@@ -35,10 +52,32 @@ class CommandRegistry:
 
 
 def build_registry() -> CommandRegistry:
-    from . import agents, core, interaction, permission, skills
+    from . import (
+        agentCommand,
+        agents,
+        ask,
+        core,
+        hook,
+        permission,
+        plan,
+        scheduler,
+        session,
+        skillsCommand,
+    )
 
     registry = CommandRegistry()
-    for module in (core, permission, skills, agents, interaction):
+    for module in (
+        core,
+        agentCommand,
+        agents,
+        ask,
+        permission,
+        plan,
+        session,
+        scheduler,
+        skillsCommand,
+        hook,
+    ):
         module.register(registry)
     return registry
 

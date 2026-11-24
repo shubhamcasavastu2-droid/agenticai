@@ -18,8 +18,6 @@ Also provides input normalization/refurbishment prompts.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 # ---------------------------------------------------------------------------
 # System prompt templates for each command
 # ---------------------------------------------------------------------------
@@ -271,7 +269,7 @@ def build_system_prompt(
         "working_dir": working_dir,
         "os_name": platform.system(),
         "os_version": platform.release(),
-        "date": datetime.now().strftime("%Y-%m-%d"),
+        "date": datetime.datetime.now().strftime("%Y-%m-%d"),
         "shell": __import__("os").environ.get("SHELL", "unknown"),
     }
     for key, value in replacements.items():
@@ -340,18 +338,79 @@ def get_command_summary() -> dict[str, str]:
     """Get a summary of all commands and their descriptions."""
     return {
         "ask": "Clarify user input with read-only tools before processing",
-        "plan": "Create and save detailed plans to docs/plans/",
         "agents-default": "Break down requests into tasks and process via todo list",
-        "session": "Create, switch, or manage user sessions",
-        "schedule": "Schedule management (TODO placeholder)",
         "agent": "Create or update agents",
-        "skills": "Create or update skills",
         "hook": "Hook management (TODO placeholder)",
-        "orchestrator": "Orchestrator management (TODO placeholder)",
         "job": "Create process channels for jobs",
+        "orchestrator": "Orchestrator management (TODO placeholder)",
+        "permission": "View or set tool permissions",
+        "plan": "Create and save detailed plans to docs/plans/",
+        "resume": "List or resume a saved session",
+        "schedule": "Schedule management (TODO placeholder)",
+        "session": "Create, switch, or manage user sessions",
+        "skills": "Create or update skills",
     }
 
 
 def get_processor_summary() -> dict[str, str]:
     """Get a summary of all processors and their descriptions."""
     return get_command_summary()
+
+
+def build_skills_section(skills: list) -> str:
+    """Build a formatted skills section for the system prompt."""
+    if not skills:
+        return ""
+    lines = ["# Available Skills (auto-loaded from .agents folders)"]
+    for s in skills:
+        name = getattr(s, "name", str(s))
+        desc = getattr(s, "description", "")
+        path = getattr(s, "path", "")
+        source = getattr(s, "source", "unknown")
+        tag = getattr(s, "tag", "")
+        lines.append(f"- **{name}** {tag}")
+        lines.append(f"  Description: {desc}")
+        lines.append(f"  Path: {path}")
+        lines.append(f"  Source: {source}")
+    return "\n".join(lines)
+
+
+def build_agents_section(agents: list) -> str:
+    """Build a formatted agents section for the system prompt."""
+    if not agents:
+        return ""
+    lines = ["# Available Agents (auto-loaded from .agents folders)"]
+    for a in agents:
+        name = getattr(a, "name", str(a))
+        desc = getattr(a, "description", "")
+        path = getattr(a, "path", "")
+        source = getattr(a, "source", "unknown")
+        tag = getattr(a, "tag", "")
+        lines.append(f"- **{name}** {tag}")
+        lines.append(f"  Description: {desc}")
+        lines.append(f"  Path: {path}")
+        lines.append(f"  Source: {source}")
+    return "\n".join(lines)
+
+
+def get_processor_class(command: str):
+    """Get the processor class for a given command name.
+
+    Args:
+        command: The slash command name (e.g., "ask", "plan", "agent").
+
+    Returns:
+        The processor class, or None if not found.
+    """
+    from ..processor import get_processor_class as _get_processor_class
+
+    return _get_processor_class(command)
+
+
+def get_tool_descriptions(tools: list) -> str:
+    """Build a formatted tool descriptions string for the system prompt."""
+    lines = []
+    for tool in tools:
+        lines.append(f"- **{tool.name}**: {tool.description}")
+    return "\n".join(lines)
+

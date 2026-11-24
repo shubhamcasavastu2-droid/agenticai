@@ -21,14 +21,14 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from ..config.config import Config
-from ..models import MessageModel, ProcessModel, SessionModel, TaskModel
+from ..models import MessageModel as MessageModel
+from ..models import ProcessModel, SessionModel
+from ..models import TaskModel as TaskModel
 from ..prompt import (
     build_system_prompt,
     get_command_allowed_tools,
-    get_command_summary,
 )
 from ..provider import Provider
 from ..tools import ToolRegistry
@@ -106,9 +106,9 @@ class BaseProcessor:
 
         Returns the response text.
         """
-        from ..types import Message, TextBlock
+        from ..types import Message
 
-        messages = [Message.user(TextBlock(text=user_input))]
+        messages = [Message.user(user_input)]
         response = await self.provider.complete(
             system=system_prompt,
             messages=messages,
@@ -333,7 +333,6 @@ PROCESSOR_CLASSES: dict[str, type[BaseProcessor]] = {
     "session": SessionProcessor,
     "schedule": ScheduleProcessor,
     "agent": AgentProcessor,
-    "skills": SkillsProcessor,
     "hook": HookProcessor,
     "orchestrator": OrchestratorProcessor,
     "job": JobProcessor,

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
 
 from dotenv import load_dotenv
 
@@ -353,6 +352,47 @@ class Config:
 
     def __repr__(self) -> str:
         return f"Config(root_dir={self.root_dir}, workspace_dir={self.workspace_dir}, model={self.model.model})"
+
+    # Backward-compatible property accessors for tests
+    @property
+    def max_completion_attempts(self) -> int:
+        return self.model.max_completion_attempts
+
+    @property
+    def normalizer_system_prompt(self) -> str:
+        return self.model.normalizer_system_prompt
+
+    @property
+    def request_timeout_seconds(self) -> float:
+        return self.model.request_timeout_seconds
+
+    @property
+    def context_window_tokens(self) -> int:
+        return self.model.context_window_tokens
+
+    @property
+    def max_completion_tokens(self) -> int:
+        return self.model.max_completion_tokens
+
+    @property
+    def user_input_refurbish_prompt(self) -> str:
+        return self.model.user_input_refurbish_prompt
+
+    @classmethod
+    def from_env(
+        cls,
+        root_dir: str | Path | None = None,
+        workspace_dir: str | Path | None = None,
+        env_file: Path | None = None,
+    ) -> Config:
+        """Create a Config instance from environment variables.
+
+        Args:
+            root_dir: Root directory for global skills/agents.
+            workspace_dir: Changeable working directory.
+            env_file: Path to .env file.
+        """
+        return cls(root_dir=root_dir, workspace_dir=workspace_dir, env_file=env_file)
 
 
 def load_config(

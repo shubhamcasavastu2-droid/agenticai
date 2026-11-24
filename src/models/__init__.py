@@ -15,7 +15,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from pathlib import Path
 from typing import Any
 
 
@@ -77,6 +76,12 @@ class ConfigModel:
     completion_review_prompt: str = ""
     system_prompt_template: str = ""
     user_input_refurbish_prompt: str = ""
+    ask_system_prompt: str = ""
+    plan_system_prompt: str = ""
+    agents_default_system_prompt: str = ""
+    session_system_prompt: str = ""
+    agent_system_prompt: str = ""
+    skills_system_prompt: str = ""
     env_vars: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
